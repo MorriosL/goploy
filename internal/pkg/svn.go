@@ -6,8 +6,10 @@ package pkg
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
+	"time"
 )
 
 type SVN struct {
@@ -16,13 +18,11 @@ type SVN struct {
 	Err    bytes.Buffer
 }
 
-func (svn *SVN) Run(operator string, options ...string) error {
+// run executes a prepared svn command against the buffers and returns the
+// formatted error contract shared by Run and RunContext.
+func (svn *SVN) run(cmd *exec.Cmd) error {
 	svn.Output.Reset()
 	svn.Err.Reset()
-	cmd := exec.Command("svn", append([]string{operator}, options...)...)
-	if len(svn.Dir) != 0 {
-		cmd.Dir = svn.Dir
-	}
 	cmd.Stdout = &svn.Output
 	cmd.Stderr = &svn.Err
 	if err := cmd.Run(); err != nil {
@@ -31,30 +31,47 @@ func (svn *SVN) Run(operator string, options ...string) error {
 	return nil
 }
 
-func (svn *SVN) Clone(options ...string) error {
-	if err := svn.Run("co", options...); err != nil {
-		return err
+func (svn *SVN) Run(operator string, options ...string) error {
+	cmd := exec.Command("svn", append([]string{operator}, options...)...)
+	if len(svn.Dir) != 0 {
+		cmd.Dir = svn.Dir
 	}
-	return nil
+	return svn.run(cmd)
+}
+
+func (svn *SVN) Clone(options ...string) error {
+	return svn.Run("co", options...)
 }
 
 func (svn *SVN) Pull(options ...string) error {
-	if err := svn.Run("up", options...); err != nil {
-		return err
-	}
-	return nil
+	return svn.Run("up", options...)
 }
 
 func (svn *SVN) Log(options ...string) error {
-	if err := svn.Run("log", options...); err != nil {
+	return svn.Run("log", options...)
+}
+
+// RunContext is the context-aware variant of Run; see GIT.RunContext for the
+// rationale. WaitDelay prevents a spawned child (e.g. ssh for svn+ssh) from
+// stalling the wait after the deadline cancels the process.
+func (svn *SVN) RunContext(ctx context.Context, operator string, options ...string) error {
+	cmd := exec.CommandContext(ctx, "svn", append([]string{operator}, options...)...)
+	if len(svn.Dir) != 0 {
+		cmd.Dir = svn.Dir
+	}
+	cmd.WaitDelay = 5 * time.Second
+	if err := svn.run(cmd); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("svn %s timed out: %w", operator, ctx.Err())
+		}
 		return err
 	}
 	return nil
 }
 
-func (svn *SVN) LS(options ...string) error {
-	if err := svn.Run("ls", options...); err != nil {
-		return err
-	}
-	return nil
+// LS lists the entries at the remote URL. It is bounded by ctx so a hung
+// remote cannot block the caller; see RunContext for the timeout and
+// WaitDelay behavior.
+func (svn *SVN) LS(ctx context.Context, options ...string) error {
+	return svn.RunContext(ctx, "ls", options...)
 }

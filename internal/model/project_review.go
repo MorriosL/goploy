@@ -12,18 +12,19 @@ const projectReviewTable = "`project_review`"
 
 // ProjectReview -
 type ProjectReview struct {
-	ID         int64  `json:"id"`
-	ProjectID  int64  `json:"projectId"`
-	CommitID   string `json:"commitId"`
-	Branch     string `json:"branch"`
-	ReviewURL  string `json:"reviewURL"`
-	State      uint8  `json:"state"`
-	Creator    string `json:"creator"`
-	CreatorID  int64  `json:"creatorId"`
-	Editor     string `json:"editor"`
-	EditorID   int64  `json:"editorId"`
-	InsertTime string `json:"insertTime"`
-	UpdateTime string `json:"updateTime"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"projectId"`
+	NamespaceID int64  `json:"namespaceId"`
+	CommitID    string `json:"commitId"`
+	Branch      string `json:"branch"`
+	ReviewURL   string `json:"reviewURL"`
+	State       uint8  `json:"state"`
+	Creator     string `json:"creator"`
+	CreatorID   int64  `json:"creatorId"`
+	Editor      string `json:"editor"`
+	EditorID    int64  `json:"editorId"`
+	InsertTime  string `json:"insertTime"`
+	UpdateTime  string `json:"updateTime"`
 }
 
 // ProjectReviews -
@@ -95,6 +96,30 @@ func (pr ProjectReview) GetData() (ProjectReview, error) {
 			&projectReview.State,
 			&projectReview.InsertTime,
 			&projectReview.UpdateTime)
+	if err != nil {
+		return projectReview, err
+	}
+	return projectReview, nil
+}
+
+func (pr ProjectReview) GetNamespaceData() (ProjectReview, error) {
+	var projectReview ProjectReview
+	err := sq.
+		Select("pr.id, pr.project_id, pr.branch, pr.commit_id, pr.state, pr.insert_time, pr.update_time").
+		From(projectReviewTable+" pr").
+		Join("`project` p ON p.id = pr.project_id").
+		Where(sq.Eq{"pr.id": pr.ID, "p.namespace_id": pr.NamespaceID}).
+		RunWith(DB).
+		QueryRow().
+		Scan(
+			&projectReview.ID,
+			&projectReview.ProjectID,
+			&projectReview.Branch,
+			&projectReview.CommitID,
+			&projectReview.State,
+			&projectReview.InsertTime,
+			&projectReview.UpdateTime,
+		)
 	if err != nil {
 		return projectReview, err
 	}

@@ -56,12 +56,15 @@ func (ftpRepo FtpRepo) Follow(projectID int64, _ string, projectURL string, _ st
 			if entry.Name == "." || entry.Name == ".." {
 				continue
 			}
+			nextLocalPath, err := safeDownloadPath(srcPath, localDir, entry.Name)
+			if err != nil {
+				return err
+			}
 			if entry.Type == 1 {
-				nextLocalDir := path.Join(localDir, entry.Name)
-				if err := os.Mkdir(nextLocalDir, 0755); err != nil {
+				if err := os.Mkdir(nextLocalPath, 0755); err != nil {
 					return err
 				}
-				if err := downloadFromFTP(nextLocalDir, path.Join(remoteDir, entry.Name)); err != nil {
+				if err := downloadFromFTP(nextLocalPath, path.Join(remoteDir, entry.Name)); err != nil {
 					return err
 				}
 			} else {
@@ -69,7 +72,7 @@ func (ftpRepo FtpRepo) Follow(projectID int64, _ string, projectURL string, _ st
 				if err != nil {
 					return err
 				}
-				localFile, err := os.Create(path.Join(localDir, entry.Name))
+				localFile, err := os.OpenFile(nextLocalPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 				if err != nil {
 					remoteFile.Close()
 					return err

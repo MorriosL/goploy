@@ -52,7 +52,7 @@ func (hub *Hub) sftp(gp *server.Goploy) server.Response {
 		c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, err.Error()))
 		return response.Empty{}
 	}
-	srv, err := (model.Server{ID: serverID}).GetData()
+	srv, err := (model.Server{ID: serverID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, err.Error()))
 		return response.Empty{}

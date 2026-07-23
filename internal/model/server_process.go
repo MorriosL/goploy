@@ -45,7 +45,25 @@ func (sp ServerProcess) GetData() (ServerProcess, error) {
 	}
 	return serverProcess, nil
 }
+func (sp ServerProcess) GetNamespaceData() (ServerProcess, error) {
+	var serverProcess ServerProcess
+	err := sq.
+		Select("id, namespace_id, name, items").
+		From(serverProcessTable).
+		Where(sq.Eq{"id": sp.ID, "namespace_id": sp.NamespaceID}).
+		OrderBy("id DESC").
+		RunWith(DB).
+		QueryRow().
+		Scan(&serverProcess.ID,
+			&serverProcess.NamespaceID,
+			&serverProcess.Name,
+			&serverProcess.Items)
+	if err != nil {
+		return serverProcess, err
+	}
 
+	return serverProcess, nil
+}
 func (sp ServerProcess) GetList() (ServerProcesses, error) {
 	rows, err := sq.
 		Select("id, name, items, insert_time, update_time").

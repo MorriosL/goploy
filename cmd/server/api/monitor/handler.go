@@ -23,7 +23,7 @@ type Monitor api.API
 func (m Monitor) Handler() []server.Route {
 	return []server.Route{
 		server.NewRoute("/monitor/getList", http.MethodGet, m.GetList).Permissions(config.ShowMonitorPage),
-		server.NewRoute("/monitor/check", http.MethodPost, m.Check).LogFunc(middleware.AddOPLog),
+		server.NewRoute("/monitor/check", http.MethodPost, m.Check).Permissions(config.AddMonitor, config.EditMonitor).LogFunc(middleware.AddOPLog),
 		server.NewRoute("/monitor/add", http.MethodPost, m.Add).Permissions(config.AddMonitor).LogFunc(middleware.AddOPLog),
 		server.NewRoute("/monitor/edit", http.MethodPut, m.Edit).Permissions(config.EditMonitor).LogFunc(middleware.AddOPLog),
 		server.NewRoute("/monitor/toggle", http.MethodPut, m.Toggle).Permissions(config.EditMonitor).LogFunc(middleware.AddOPLog),
@@ -74,10 +74,10 @@ func (Monitor) Check(gp *server.Goploy) server.Response {
 			serverID = e.ServerID
 		}
 
-		err = m.RunFailScript(serverID)
-		if err != nil {
+		// failScript is a side-effect; don't let its result overwrite the check error.
+		if failErr := m.RunFailScript(serverID); failErr != nil {
 			sb.WriteString("\nFailScriptErr : ")
-			sb.WriteString(err.Error())
+			sb.WriteString(failErr.Error())
 		}
 	} else {
 		sb.WriteString("Monitor : Success \n")

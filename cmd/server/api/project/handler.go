@@ -11,10 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/zhenorzz/goploy/cmd/server/api"
 	"github.com/zhenorzz/goploy/cmd/server/api/middleware"
 	"github.com/zhenorzz/goploy/config"
@@ -127,6 +128,11 @@ func (Project) PingRepos(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
+	if err := repo.ValidateRepoURL(reqData.RepoType, reqData.URL); err != nil {
+		log.Error(fmt.Sprintf("pingRepos url validation failed: %s", err.Error()))
+		return response.JSON{Code: response.Error, Message: "repository is not accessible"}
+	}
+
 	if strings.HasSuffix(reqData.URL, "git@") {
 		host := strings.Split(reqData.URL, "git@")[1]
 		host = strings.Split(host, ":")[0]
@@ -146,7 +152,8 @@ func (Project) PingRepos(gp *server.Goploy) server.Response {
 			cmd.Stdout = &cmdOutbuf
 			cmd.Stderr = &cmdErrbuf
 			if err := cmd.Run(); err != nil {
-				return response.JSON{Code: response.Error, Message: cmdErrbuf.String()}
+				log.Error(fmt.Sprintf("repo keyscan failed: %s", cmdErrbuf.String()))
+				return response.JSON{Code: response.Error, Message: "repository is not accessible"}
 			}
 			f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
@@ -165,7 +172,8 @@ func (Project) PingRepos(gp *server.Goploy) server.Response {
 	}
 
 	if err := r.Ping(reqData.URL); err != nil {
-		return response.JSON{Code: response.Error, Message: err.Error()}
+		log.Error(fmt.Sprintf("pingRepos ping failed: %s", err.Error()))
+		return response.JSON{Code: response.Error, Message: "repository is not accessible"}
 	}
 
 	return response.JSON{}
@@ -188,6 +196,11 @@ func (Project) GetRemoteBranchList(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
+	if err := repo.ValidateRepoURL(reqData.RepoType, reqData.URL); err != nil {
+		log.Error(fmt.Sprintf("getRemoteBranchList url validation failed: %s", err.Error()))
+		return response.JSON{Code: response.Error, Message: "repository is not accessible"}
+	}
+
 	if strings.Contains(reqData.URL, "git@") {
 		host := strings.Split(reqData.URL, "git@")[1]
 		host = strings.Split(host, ":")[0]
@@ -207,7 +220,8 @@ func (Project) GetRemoteBranchList(gp *server.Goploy) server.Response {
 			cmd.Stdout = &cmdOutbuf
 			cmd.Stderr = &cmdErrbuf
 			if err := cmd.Run(); err != nil {
-				return response.JSON{Code: response.Error, Message: cmdErrbuf.String()}
+				log.Error(fmt.Sprintf("repo keyscan failed: %s", cmdErrbuf.String()))
+				return response.JSON{Code: response.Error, Message: "repository is not accessible"}
 			}
 			f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
@@ -227,7 +241,8 @@ func (Project) GetRemoteBranchList(gp *server.Goploy) server.Response {
 
 	list, err := r.RemoteBranchList(reqData.URL)
 	if err != nil {
-		return response.JSON{Code: response.Error, Message: err.Error()}
+		log.Error(fmt.Sprintf("getRemoteBranchList failed: %s", err.Error()))
+		return response.JSON{Code: response.Error, Message: "repository is not accessible"}
 	}
 
 	type RespData struct {
@@ -246,6 +261,9 @@ func (Project) GetRemoteBranchList(gp *server.Goploy) server.Response {
 func (Project) GetBindServerList(gp *server.Goploy) server.Response {
 	id, err := strconv.ParseInt(gp.URLQuery.Get("id"), 10, 64)
 	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Project{ID: id, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 	projectServers, err := model.ProjectServer{ProjectID: id}.GetBindServerListByProjectID()
@@ -273,6 +291,9 @@ func (Project) GetBindUserList(gp *server.Goploy) server.Response {
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
+	if _, err := (model.Project{ID: id, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
 	projectUsers, err := model.ProjectUser{ProjectID: id}.GetBindUserListByProjectID()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
@@ -296,6 +317,9 @@ func (Project) GetBindUserList(gp *server.Goploy) server.Response {
 func (Project) GetProjectFileList(gp *server.Goploy) server.Response {
 	id, err := strconv.ParseInt(gp.URLQuery.Get("id"), 10, 64)
 	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Project{ID: id, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 	projectFiles, err := model.ProjectFile{ProjectID: id}.GetListByProjectID()
@@ -323,13 +347,17 @@ func (Project) GetProjectFileContent(gp *server.Goploy) server.Response {
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	projectFileData, err := model.ProjectFile{ID: id}.GetData()
+	projectFileData, err := model.ProjectFile{ID: id, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	fileBytes, err := os.ReadFile(path.Join(config.GetProjectFilePath(projectFileData.ProjectID), projectFileData.Filename))
+	filePath, _, err := pkg.ResolvePath(config.GetProjectFilePath(projectFileData.ProjectID), projectFileData.Filename)
 	if err != nil {
-		fmt.Println("read fail", err)
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	fileBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
 	type RespData struct {
@@ -356,12 +384,21 @@ func (Project) GetReposFileList(gp *server.Goploy) server.Response {
 	if err := gp.Decode(&reqData); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-
-	if err := pkg.ValidateRelativePath(reqData.Path); err != nil {
+	if _, err := (model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	files, err := os.ReadDir(path.Join(config.GetProjectPath(reqData.ID), reqData.Path))
+	repositoryPath := config.GetProjectPath(reqData.ID)
+	// The file compare dialog addresses the repository root as "/".
+	if logicalPath := strings.Trim(reqData.Path, `/\`); logicalPath != "" {
+		resolvedPath, _, err := pkg.ResolvePath(repositoryPath, reqData.Path)
+		if err != nil {
+			return response.JSON{Code: response.Error, Message: err.Error()}
+		}
+		repositoryPath = resolvedPath
+	}
+
+	files, err := os.ReadDir(repositoryPath)
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -527,7 +564,7 @@ func (Project) Edit(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	projectData, err := model.Project{ID: reqData.ID}.GetDataInNamespace(gp.Namespace.ID)
+	projectData, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -618,7 +655,7 @@ func (Project) SetAutoDeploy(gp *server.Goploy) server.Response {
 	if err := gp.Decode(&reqData); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	if _, err := (model.Project{ID: reqData.ID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 	err := model.Project{
@@ -648,7 +685,7 @@ func (Project) Remove(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	projectData, err := model.Project{ID: reqData.ID}.GetDataInNamespace(gp.Namespace.ID)
+	projectData, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -684,14 +721,29 @@ func (Project) UploadFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if _, err := (model.Project{ID: reqData.ProjectID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
+	filename := reqData.Filename
 	if reqData.ProjectFileID != 0 {
-		if _, err := (model.ProjectFile{ID: reqData.ProjectFileID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+		projectFileData, err := (model.ProjectFile{ID: reqData.ProjectFileID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
+		if err != nil {
 			return response.JSON{Code: response.Error, Message: err.Error()}
 		}
+		if projectFileData.ProjectID != reqData.ProjectID {
+			return response.JSON{Code: response.Error, Message: "project file does not belong to project"}
+		}
+		// Replacements use the filename from the validated DB record, not the request.
+		filename = projectFileData.Filename
+	}
+
+	filePath, normalizedFilename, err := pkg.ResolvePath(config.GetProjectFilePath(reqData.ProjectID), filename)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
 	file, _, err := gp.Request.FormFile("file")
@@ -700,41 +752,26 @@ func (Project) UploadFile(gp *server.Goploy) server.Response {
 	}
 	defer file.Close()
 
-	filePath := path.Join(config.GetProjectFilePath(reqData.ProjectID), reqData.Filename)
-	fileDir := path.Dir(filePath)
-	if _, err := os.Stat(fileDir); err != nil {
-		if os.IsNotExist(err) {
-			err := os.MkdirAll(fileDir, 0755)
-			if err != nil {
-				return response.JSON{Code: response.Error, Message: err.Error()}
-			}
-		} else {
-			return response.JSON{Code: response.Error, Message: err.Error()}
-		}
-	}
-
-	// read all the contents of our uploaded file into a
-	// byte array
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := os.WriteFile(filePath, fileBytes, 0755); err != nil {
+	if err := writeProjectFile(filePath, fileBytes, reqData.ProjectFileID != 0); err != nil {
+		if os.IsExist(err) {
+			return response.JSON{Code: response.Error, Message: "file already exists"}
+		}
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
 	if reqData.ProjectFileID == 0 {
 		reqData.ProjectFileID, err = model.ProjectFile{
-			Filename:  reqData.Filename,
+			Filename:  normalizedFilename,
 			ProjectID: reqData.ProjectID,
 		}.AddRow()
-	} else {
-		err = model.ProjectFile{
-			ID:        reqData.ProjectFileID,
-			Filename:  reqData.Filename,
-			ProjectID: reqData.ProjectID,
-		}.EditRow()
+		if err != nil {
+			_ = os.Remove(filePath)
+		}
 	}
 
 	if err != nil {
@@ -767,40 +804,31 @@ func (Project) AddFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if _, err := (model.Project{ID: reqData.ProjectID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	filePath := path.Join(config.GetProjectFilePath(reqData.ProjectID), reqData.Filename)
-	fileDir := path.Dir(filePath)
-	if _, err := os.Stat(fileDir); err != nil {
-		if os.IsNotExist(err) {
-			err := os.MkdirAll(fileDir, 0755)
-			if err != nil {
-				return response.JSON{Code: response.Error, Message: err.Error()}
-			}
-		} else {
-			return response.JSON{Code: response.Error, Message: err.Error()}
+	filePath, normalizedFilename, err := pkg.ResolvePath(config.GetProjectFilePath(reqData.ProjectID), reqData.Filename)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if err := writeProjectFile(filePath, []byte(reqData.Content), false); err != nil {
+		if os.IsExist(err) {
+			return response.JSON{Code: response.Error, Message: "file already exists"}
 		}
-	}
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		return response.JSON{Code: response.Error, Message: err.Error()}
-	}
-	defer file.Close()
-
-	_, err = file.WriteString(reqData.Content)
-	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
 	id, err := model.ProjectFile{
 		ProjectID: reqData.ProjectID,
-		Filename:  reqData.Filename,
+		Filename:  normalizedFilename,
 	}.AddRow()
 
 	if err != nil {
+		_ = os.Remove(filePath)
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -829,26 +857,19 @@ func (Project) EditFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	projectFileData, err := model.ProjectFile{ID: reqData.ID}.GetDataInNamespace(gp.Namespace.ID)
+	projectFileData, err := model.ProjectFile{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	_, err = os.Stat(config.GetProjectFilePath(projectFileData.ProjectID))
+	filePath, _, err := pkg.ResolvePath(config.GetProjectFilePath(projectFileData.ProjectID), projectFileData.Filename)
 	if err != nil {
-		err := os.MkdirAll(config.GetProjectFilePath(projectFileData.ProjectID), os.ModePerm)
-		if err != nil {
-			return response.JSON{Code: response.Error, Message: err.Error()}
-		}
+		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-
-	file, err := os.Create(path.Join(config.GetProjectFilePath(projectFileData.ProjectID), projectFileData.Filename))
-	if err != nil {
-		panic(err)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	defer file.Close()
-	_, err = file.WriteString(reqData.Content)
-	if err != nil {
+	if err := writeProjectFile(filePath, []byte(reqData.Content), true); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -872,12 +893,16 @@ func (Project) RemoveFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	projectFileData, err := model.ProjectFile{ID: reqData.ProjectFileID}.GetDataInNamespace(gp.Namespace.ID)
+	projectFileData, err := model.ProjectFile{ID: reqData.ProjectFileID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := os.Remove(path.Join(config.GetProjectFilePath(projectFileData.ProjectID), projectFileData.Filename)); err != nil {
+	filePath, _, err := pkg.ResolvePath(config.GetProjectFilePath(projectFileData.ProjectID), projectFileData.Filename)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if err := os.Remove(filePath); err != nil {
 		if !os.IsNotExist(err) {
 			return response.JSON{Code: response.Error, Message: "Delete file fail, Detail: " + err.Error()}
 		}
@@ -905,6 +930,9 @@ func (Project) GetReviewList(gp *server.Goploy) server.Response {
 
 	var reqData ReqData
 	if err := gp.Decode(&reqData); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -936,6 +964,9 @@ func (Project) GetTaskList(gp *server.Goploy) server.Response {
 	}
 	var reqData ReqData
 	if err := gp.Decode(&reqData); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -972,7 +1003,7 @@ func (Project) AddTask(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if _, err := (model.Project{ID: reqData.ProjectID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1013,7 +1044,7 @@ func (Project) RemoveTask(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if _, err := (model.ProjectTask{ID: reqData.ID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.ProjectTask{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1038,6 +1069,9 @@ func (Project) GetProcessList(gp *server.Goploy) server.Response {
 	}
 	var reqData ReqData
 	if err := gp.Decode(&reqData); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1075,7 +1109,7 @@ func (Project) AddProcess(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if _, err := (model.Project{ID: reqData.ProjectID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1121,7 +1155,7 @@ func (Project) EditProcess(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if _, err := (model.ProjectProcess{ID: reqData.ID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.ProjectProcess{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1156,7 +1190,7 @@ func (Project) DeleteProcess(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if _, err := (model.ProjectProcess{ID: reqData.ID}).GetDataInNamespace(gp.Namespace.ID); err != nil {
+	if _, err := (model.ProjectProcess{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1190,4 +1224,25 @@ func verifyProjectScript(projectScript model.ProjectScript) error {
 	}
 
 	return nil
+}
+
+// writeProjectFile writes content to filePath, replacing an existing file
+// only when overwrite is set.
+func writeProjectFile(filePath string, content []byte, overwrite bool) error {
+	flags := os.O_WRONLY | os.O_CREATE
+	if overwrite {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_EXCL
+	}
+
+	file, err := os.OpenFile(filePath, flags, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(content); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
 }

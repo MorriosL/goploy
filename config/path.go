@@ -7,10 +7,8 @@ package config
 import (
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 var (
@@ -29,40 +27,33 @@ func GetAssetDir() string {
 	if err != nil {
 		panic(err)
 	}
-	i := strings.LastIndex(app, "/")
-	if i < 0 {
-		i = strings.LastIndex(app, "\\")
-	}
-	if i < 0 {
-		panic(err)
-	}
-	AssetDir = app[0 : i+1]
+	AssetDir = filepath.Dir(app)
 	return AssetDir
 }
 
 func GetConfigFile() string {
-	return path.Join(GetAssetDir(), "goploy.toml")
+	return filepath.Join(GetAssetDir(), "goploy.toml")
 }
 
 func GetPidFile() string {
-	return path.Join(GetAssetDir(), "goploy.pid")
+	return filepath.Join(GetAssetDir(), "goploy.pid")
 }
 
 func GetRepositoryPath() string {
 	if Toml.APP.RepositoryPath != "" {
-		return path.Join(Toml.APP.RepositoryPath, "repository")
+		return filepath.Join(Toml.APP.RepositoryPath, "repository")
 	}
-	return path.Join(GetAssetDir(), "repository")
+	return filepath.Join(GetAssetDir(), "repository")
 }
 
 func GetProjectFilePath(projectID int64) string {
-	return path.Join(GetRepositoryPath(), "project-file", "project_"+strconv.FormatInt(projectID, 10))
+	return filepath.Join(GetRepositoryPath(), "project-file", "project_"+strconv.FormatInt(projectID, 10))
 }
 
 func GetProjectPath(projectID int64) string {
-	return path.Join(GetRepositoryPath(), "project_"+strconv.FormatInt(projectID, 10))
+	return filepath.Join(GetRepositoryPath(), "project_"+strconv.FormatInt(projectID, 10))
 }
 
 func GetTerminalLogPath(tlID int64) string {
-	return path.Join(GetRepositoryPath(), "terminal-log", strconv.FormatInt(tlID, 10)+".cast")
+	return filepath.Join(GetRepositoryPath(), "terminal-log", strconv.FormatInt(tlID, 10)+".cast")
 }

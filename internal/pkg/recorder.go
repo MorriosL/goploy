@@ -7,7 +7,7 @@ package pkg
 import (
 	"encoding/json"
 	"os"
-	"path"
+	"path/filepath"
 	"time"
 )
 
@@ -81,8 +81,8 @@ func (recorder *Recorder) WriteData(data string) (err error) {
 func NewRecorder(recordingPath, term string, h int, w int) (recorder *Recorder, err error) {
 	recorder = &Recorder{}
 
-	if _, err := os.Stat(path.Dir(recordingPath)); err != nil {
-		if err := os.MkdirAll(path.Dir(recordingPath), os.ModePerm); err != nil {
+	if _, err := os.Stat(filepath.Dir(recordingPath)); err != nil {
+		if err := os.MkdirAll(filepath.Dir(recordingPath), os.ModePerm); err != nil {
 			return recorder, err
 		}
 	}

@@ -5,6 +5,7 @@
 package repo
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -25,8 +26,13 @@ func (SvnRepo) CanRollback() bool {
 
 // Ping -
 func (SvnRepo) Ping(url string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), repoProbeTimeout)
+	defer cancel()
 	svn := pkg.SVN{}
-	if err := svn.LS(strings.Split(url, " ")...); err != nil {
+	if err := svn.LS(ctx, strings.Split(url, " ")...); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
 		return errors.New(svn.Err.String())
 	}
 	return nil

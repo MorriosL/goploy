@@ -13,6 +13,8 @@ type Cmd interface {
 	Remove(file string) string
 	ChangeDirTime(dir string) string
 	Script(mode, file string) string
+	RemoveExpiredBackups(dir string, keep int) string
+	Copy(src, dst string, isDir bool) string
 }
 
 func New(os string) Cmd {

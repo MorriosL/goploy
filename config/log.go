@@ -5,7 +5,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -35,7 +34,7 @@ func (l *LogConfig) SetDefault() {
 				panic(err.Error())
 			}
 		}
-		logFile, err = os.OpenFile(logPath+"/goploy.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0766)
+		logFile, err = os.OpenFile(filepath.Join(logPath, "goploy.log"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0766)
 		if nil != err {
 			panic(err.Error())
 		}
@@ -44,7 +43,7 @@ func (l *LogConfig) SetDefault() {
 
 	log.SetFormatter(&log.TextFormatter{
 		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
-			return fmt.Sprintf("%s()", path.Base(f.Function)), fmt.Sprintf("%s:%d", path.Base(f.File), f.Line)
+			return fmt.Sprintf("%s()", filepath.Base(f.Function)), fmt.Sprintf("%s:%d", filepath.Base(f.File), f.Line)
 		},
 	})
 

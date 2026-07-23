@@ -16,13 +16,14 @@ import (
 const projectServerTable = "`project_server`"
 
 type ProjectServer struct {
-	ID         int64   `json:"id"`
-	ProjectID  int64   `json:"projectId"`
-	ServerID   int64   `json:"serverId"`
-	Project    Project `json:"project,omitempty"`
-	Server     Server  `json:"server,omitempty"`
-	InsertTime string  `json:"insertTime"`
-	UpdateTime string  `json:"updateTime"`
+	ID          int64   `json:"id"`
+	ProjectID   int64   `json:"projectId"`
+	NamespaceID int64   `json:"namespaceId"`
+	ServerID    int64   `json:"serverId"`
+	Project     Project `json:"project,omitempty"`
+	Server      Server  `json:"server,omitempty"`
+	InsertTime  string  `json:"insertTime"`
+	UpdateTime  string  `json:"updateTime"`
 }
 
 type ProjectServers []ProjectServer
@@ -156,6 +157,15 @@ func (ps ProjectServer) DeleteInID(id []int64) error {
 	_, err := sq.
 		Delete(projectServerTable).
 		Where(sq.Eq{"id": id}).
+		RunWith(DB).
+		Exec()
+	return err
+}
+func (ps ProjectServer) DeleteInIDInNamespace(id []int64) error {
+	_, err := sq.
+		Delete(projectServerTable).
+		Where(sq.Eq{"id": id}).
+		Where(sq.Expr("project_id IN (SELECT id FROM `project` WHERE namespace_id = ?)", ps.NamespaceID)).
 		RunWith(DB).
 		Exec()
 	return err

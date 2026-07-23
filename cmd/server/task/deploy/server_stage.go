@@ -14,7 +14,7 @@ import (
 	"github.com/zhenorzz/goploy/internal/transmitter"
 	"gopkg.in/yaml.v3"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -51,11 +51,11 @@ func (gsync *Gsync) serverStage() error {
 					step.Commands = append(step.Commands, fmt.Sprintf("rm -f %s", docker.GetDockerProjectScriptPath(project.ID, scriptName)))
 					scriptContent = strings.Join(step.Commands, "\n")
 					project.Script.AfterDeploy.ScriptNames = append(project.Script.AfterDeploy.ScriptNames, scriptName)
-					_ = os.WriteFile(path.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
+					_ = os.WriteFile(filepath.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
 				}
 			} else {
 				project.Script.AfterDeploy.ScriptNames = append(project.Script.AfterDeploy.ScriptNames, scriptName)
-				_ = os.WriteFile(path.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
+				_ = os.WriteFile(filepath.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
 			}
 		}
 
@@ -131,7 +131,7 @@ func (gsync *Gsync) serverStage() error {
 				}{projectServer.ServerID, projectServer.Server.Name, scriptContent, step.Name})
 				publishTraceModel.Ext = string(ext)
 
-				scriptFullName := path.Join(config.GetProjectPath(project.ID), step.ScriptName)
+				scriptFullName := filepath.Join(config.GetProjectPath(project.ID), step.ScriptName)
 				_ = os.Remove(scriptFullName)
 
 				if dockerErr != nil {

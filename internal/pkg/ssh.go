@@ -74,8 +74,19 @@ func (sshConfig SSHConfig) Dial() (*ssh.Client, error) {
 
 // version|cpu cores|mem
 
-func (sshConfig SSHConfig) GetOSInfo() string {
-	osInfoScript := `cat /etc/os-release | grep "PRETTY_NAME" | awk -F\" '{print $2}' && cat /proc/cpuinfo  | grep "processor" | wc -l && cat /proc/meminfo | grep MemTotal | awk '{print $2}'`
+// osInfoScript returns the remote command that yields three lines --
+// "version", "cpu cores", "mem(KB)" -- for the target OS. Linux reads
+// /etc/os-release and /proc; Windows uses PowerShell + CIM (the SSH default
+// shell on Windows is cmd.exe, so PowerShell is invoked explicitly). The output
+// shape is identical across OSes so the OSInfo field stays format-stable.
+func osInfoScript(os string) string {
+	if os == "windows" {
+		return `powershell -NoProfile -Command "$o=Get-CimInstance Win32_OperatingSystem; $o.Caption + '|' + $env:NUMBER_OF_PROCESSORS + '|' + $o.TotalVisibleMemorySize"`
+	}
+	return `cat /etc/os-release | grep "PRETTY_NAME" | awk -F\" '{print $2}' && cat /proc/cpuinfo  | grep "processor" | wc -l && cat /proc/meminfo | grep MemTotal | awk '{print $2}'`
+}
+
+func (sshConfig SSHConfig) GetOSInfo(os string) string {
 	client, err := sshConfig.Dial()
 	if err != nil {
 		return ""
@@ -91,12 +102,12 @@ func (sshConfig SSHConfig) GetOSInfo() string {
 	var sshOutbuf, sshErrbuf bytes.Buffer
 	session.Stdout = &sshOutbuf
 	session.Stderr = &sshErrbuf
-	if err := session.Run(osInfoScript); err != nil {
+	if err := session.Run(osInfoScript(os)); err != nil {
 		return ""
 	}
 
-	// version|cpu cores|mem
-	return strings.Replace(strings.Trim(sshOutbuf.String(), "\n"), "\n", "|", -1)
+	// version|cpu cores|mem -- PowerShell emits CRLF, so trim \r as well
+	return strings.Replace(strings.Trim(sshOutbuf.String(), "\r\n"), "\n", "|", -1)
 }
 
 func (sshConfig SSHConfig) getConfig(user, password, path string) (*ssh.ClientConfig, error) {

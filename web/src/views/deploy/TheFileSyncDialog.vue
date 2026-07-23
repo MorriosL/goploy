@@ -61,7 +61,7 @@
             </el-input>
             <el-upload
               style="margin: 0 12px"
-              :action="`${formProps.action}&projectFileId=${file.id}&projectId=${file.projectId}&filename=${file.filename}`"
+              :action="`${formProps.action}&projectFileId=${file.id}&projectId=${file.projectId}&filename=${encodeURIComponent(file.filename)}`"
               :before-upload="(uploadFile) => beforeUpload(uploadFile, index)"
               :on-success="(response) => handleUploadSuccess(response, index)"
               :show-file-list="false"

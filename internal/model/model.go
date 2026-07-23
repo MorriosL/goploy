@@ -12,7 +12,7 @@ import (
 	"github.com/zhenorzz/goploy/config"
 	"github.com/zhenorzz/goploy/database"
 	"github.com/zhenorzz/goploy/internal/pkg"
-	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -168,7 +168,7 @@ func Update(targetVerStr string) error {
 	var vers []*version.Version
 	for _, entry := range sqlEntries {
 		filename := entry.Name()
-		ver, err := version.NewVersion(filename[0 : len(filename)-len(path.Ext(filename))])
+		ver, err := version.NewVersion(filename[0 : len(filename)-len(filepath.Ext(filename))])
 		if err != nil {
 			continue
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/zhenorzz/goploy/config"
 	"github.com/zhenorzz/goploy/internal/model"
+	"github.com/zhenorzz/goploy/internal/pkg"
 	"path"
 	"path/filepath"
 	"strings"
@@ -88,20 +89,33 @@ func (c *Config) Run(step Step) (outStr string, runErr error) {
 			return
 		}
 
-		tar, err := archive.TarWithOptions(filepath.Join(localProjectPath, step.ImageOptions.Dockerfile), &archive.TarOptions{})
+		if err := pkg.ValidateRelativePath(step.ImageOptions.Dockerfile); err != nil {
+			runErr = fmt.Errorf("invalid dockerfile path: %s", err)
+			return
+		}
+		dockerfilePath := filepath.Clean(filepath.FromSlash(strings.ReplaceAll(step.ImageOptions.Dockerfile, `\`, "/")))
+		if !pkg.IsPathWithinBase(localProjectPath, filepath.Join(localProjectPath, dockerfilePath)) {
+			runErr = fmt.Errorf("dockerfile path escapes project directory")
+			return
+		}
+		tar, err := archive.TarWithOptions(localProjectPath, &archive.TarOptions{})
+		if err != nil {
+			runErr = fmt.Errorf("archive docker build context err: %s", err)
+			return
+		}
 
 		buildResponse, err := c.Client.ImageBuild(ctx, tar, types.ImageBuildOptions{
 			Tags:        []string{step.Image},
-			Dockerfile:  "Dockerfile",
+			Dockerfile:  filepath.ToSlash(dockerfilePath),
 			Remove:      true,
 			ForceRemove: true,
 		})
-		defer buildResponse.Body.Close()
 
 		if err != nil {
 			runErr = fmt.Errorf("build image err: %s", err)
 			return
 		}
+		defer buildResponse.Body.Close()
 
 		buildOutput := strings.Builder{}
 		dec := json.NewDecoder(buildResponse.Body)

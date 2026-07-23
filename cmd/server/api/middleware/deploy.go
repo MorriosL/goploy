@@ -14,9 +14,6 @@ import (
 )
 
 func HasProjectPermission(gp *server.Goploy) error {
-	if _, ok := gp.Namespace.PermissionIDs[config.GetAllDeployList]; ok {
-		return nil
-	}
 	type ReqData struct {
 		ProjectID int64 `json:"projectId"`
 	}
@@ -25,7 +22,13 @@ func HasProjectPermission(gp *server.Goploy) error {
 		return err
 	}
 
-	_, err := model.Project{ID: reqData.ProjectID, UserID: gp.UserInfo.ID}.GetUserProjectData()
+	if _, ok := gp.Namespace.PermissionIDs[config.GetAllDeployList]; ok {
+		if _, err := (model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+			return errors.New("no permission")
+		}
+		return nil
+	}
+	_, err := model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID, UserID: gp.UserInfo.ID}.GetUserProjectData()
 	if err != nil {
 		return errors.New("no permission")
 	}

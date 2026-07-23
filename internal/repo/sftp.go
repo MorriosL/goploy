@@ -62,14 +62,14 @@ func (sftpRepo SftpRepo) Follow(projectID int64, _ string, projectURL string, _ 
 			return err
 		}
 		for _, entry := range remoteEntries {
-			nextLocalDir := path.Join(localDir, entry.Name())
-			nextRemoteDir := path.Join(remoteDir, entry.Name())
 			if entry.Mode()&os.ModeSymlink != 0 {
-				entry, err = sftpClient.Stat(nextRemoteDir)
-				if err != nil {
-					return err
-				}
+				continue
 			}
+			nextLocalDir, err := safeDownloadPath(srcPath, localDir, entry.Name())
+			if err != nil {
+				return err
+			}
+			nextRemoteDir := path.Join(remoteDir, entry.Name())
 
 			if entry.IsDir() {
 				if err = os.Mkdir(nextLocalDir, 0755); err != nil {
@@ -83,7 +83,7 @@ func (sftpRepo SftpRepo) Follow(projectID int64, _ string, projectURL string, _ 
 				if err != nil {
 					return err
 				}
-				localFile, err := os.Create(nextLocalDir)
+				localFile, err := os.OpenFile(nextLocalDir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 				if err != nil {
 					remoteFile.Close()
 					return err

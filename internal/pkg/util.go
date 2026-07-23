@@ -5,33 +5,9 @@
 package pkg
 
 import (
-	"errors"
-	"fmt"
-	"path"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
-
-// ValidateRelativePath rejects user-supplied paths that would escape a base
-// directory via traversal (e.g. "../../etc/passwd"), absolute paths, or null
-// bytes. It accepts only clean relative paths that stay within their base.
-func ValidateRelativePath(p string) error {
-	if p == "" {
-		return errors.New("path is required")
-	}
-	if strings.ContainsRune(p, '\x00') {
-		return errors.New("invalid path")
-	}
-	if path.IsAbs(p) || filepath.IsAbs(p) {
-		return errors.New("absolute path not allowed")
-	}
-	cleaned := path.Clean(strings.ReplaceAll(p, `\`, `/`))
-	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-		return errors.New("invalid path")
-	}
-	return nil
-}
 
 // GetScriptExt return script extension default bash
 func GetScriptExt(scriptMode string) string {
@@ -47,72 +23,6 @@ func GetScriptExt(scriptMode string) string {
 	default:
 		return "sh"
 	}
-}
-
-// ParseCommandLine parse cmd arg
-func ParseCommandLine(command string) ([]string, error) {
-	var args []string
-	var current strings.Builder
-
-	inQuotes := false
-	quoteChar := byte(0)
-	escapeNext := false
-
-	for i := 0; i < len(command); i++ {
-		c := command[i]
-
-		if escapeNext {
-			current.WriteByte(c)
-			escapeNext = false
-			continue
-		}
-
-		if c == '\\' && !inQuotes {
-			escapeNext = true
-			continue
-		}
-
-		if inQuotes {
-			if c == quoteChar {
-				inQuotes = false
-				quoteChar = 0
-			} else {
-				current.WriteByte(c)
-			}
-			continue
-		}
-
-		if c == '"' || c == '\'' {
-			inQuotes = true
-			quoteChar = c
-			continue
-		}
-
-		if c == ' ' || c == '\t' {
-			if current.Len() > 0 {
-				args = append(args, current.String())
-				current.Reset()
-			}
-			continue
-		}
-
-		current.WriteByte(c)
-	}
-
-	if current.Len() > 0 {
-		args = append(args, current.String())
-	}
-
-	if inQuotes {
-		return nil, fmt.Errorf("unclosed quote in command line: %s", command)
-	}
-
-	// 检查未处理的转义字符
-	if escapeNext {
-		return nil, fmt.Errorf("dangling escape character at end of command line: %s", command)
-	}
-
-	return args, nil
 }
 
 func ClearNewline(str string) string {

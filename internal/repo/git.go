@@ -5,6 +5,7 @@
 package repo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -23,8 +24,13 @@ func (GitRepo) CanRollback() bool {
 }
 
 func (GitRepo) Ping(url string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), repoProbeTimeout)
+	defer cancel()
 	git := pkg.GIT{}
-	if err := git.LsRemote("-h", url); err != nil {
+	if err := git.LsRemote(ctx, "-h", url); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
 		return errors.New(git.Err.String())
 	}
 
@@ -100,8 +106,10 @@ func (gitRepo GitRepo) Follow(projectID int64, target string, url string, branch
 }
 
 func (GitRepo) RemoteBranchList(url string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), repoProbeTimeout)
+	defer cancel()
 	git := pkg.GIT{}
-	if err := git.LsRemote("-h", url); err != nil {
+	if err := git.LsRemote(ctx, "-h", url); err != nil {
 		return []string{}, err
 	}
 

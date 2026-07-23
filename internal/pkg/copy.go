@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 )
 
 // CopyFile copies a single file from src to dst
@@ -23,7 +23,11 @@ func CopyFile(src, dst string) error {
 	}
 	defer srcFD.Close()
 
-	if dstFD, err = os.Create(dst); err != nil {
+	if info, statErr := os.Lstat(dst); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to overwrite symbolic link: %s", dst)
+	}
+
+	if dstFD, err = os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644); err != nil {
 		return err
 	}
 	defer dstFD.Close()
@@ -46,6 +50,9 @@ func CopyDir(src, dst string) error {
 	if srcInfo, err = os.Stat(src); err != nil {
 		return err
 	}
+	if srcInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to copy symbolic link: %s", src)
+	}
 
 	if err = os.MkdirAll(dst, srcInfo.Mode()); err != nil {
 		return err
@@ -56,16 +63,19 @@ func CopyDir(src, dst string) error {
 	}
 
 	for _, fd := range fds {
-		srcFilePath := path.Join(src, fd.Name())
-		dstFilePath := path.Join(dst, fd.Name())
+		srcFilePath := filepath.Join(src, fd.Name())
+		dstFilePath := filepath.Join(dst, fd.Name())
 
+		if fd.Type()&os.ModeSymlink != 0 {
+			continue
+		}
 		if fd.IsDir() {
 			if err = CopyDir(srcFilePath, dstFilePath); err != nil {
-				fmt.Println(err)
+				return err
 			}
 		} else {
 			if err = CopyFile(srcFilePath, dstFilePath); err != nil {
-				fmt.Println(err)
+				return err
 			}
 		}
 	}

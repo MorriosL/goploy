@@ -76,7 +76,7 @@ func (hub *Hub) xterm(gp *server.Goploy) server.Response {
 		return response.Empty{}
 	}
 
-	srv, err := (model.Server{ID: serverID}).GetData()
+	srv, err := (model.Server{ID: serverID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		_ = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, err.Error()))
 		return response.Empty{}

@@ -550,7 +550,7 @@ func (p Project) GetData() (Project, error) {
 	return project, nil
 }
 
-func (p Project) GetDataInNamespace(namespaceID int64) (Project, error) {
+func (p Project) GetNamespaceData() (Project, error) {
 	var project Project
 	var script []byte
 	err := sq.
@@ -581,7 +581,7 @@ func (p Project) GetDataInNamespace(namespaceID int64) (Project, error) {
 			insert_time,
 			update_time`).
 		From(projectTable).
-		Where(sq.Eq{"id": p.ID, "namespace_id": namespaceID}).
+		Where(sq.Eq{"id": p.ID, "namespace_id": p.NamespaceID}).
 		RunWith(DB).
 		QueryRow().
 		Scan(
@@ -629,6 +629,7 @@ func (p Project) GetUserProjectData() (Project, error) {
 		Where(sq.Eq{
 			"project_user.project_id": p.ID,
 			"project_user.user_id":    p.UserID,
+			"project.namespace_id":    p.NamespaceID,
 			"project.state":           Enable,
 		}).
 		RunWith(DB).

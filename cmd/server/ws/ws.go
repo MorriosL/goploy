@@ -73,8 +73,8 @@ func init() {
 func (hub *Hub) Handler() []server.Route {
 	return []server.Route{
 		server.NewRoute("/ws/connect", http.MethodGet, hub.connect),
-		server.NewRoute("/ws/xterm", http.MethodGet, hub.xterm),
-		server.NewRoute("/ws/sftp", http.MethodGet, hub.sftp),
+		server.NewRoute("/ws/xterm", http.MethodGet, hub.xterm).Permissions(config.ShowTerminalPage),
+		server.NewRoute("/ws/sftp", http.MethodGet, hub.sftp).Permissions(config.ShowSftpFilePage),
 	}
 }
 

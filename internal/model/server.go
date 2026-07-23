@@ -147,6 +147,16 @@ func (s Server) GetAll() (Servers, error) {
 }
 
 func (s Server) GetData() (Server, error) {
+	return s.getData(false)
+}
+
+// GetNamespaceData returns a server that belongs to s.NamespaceID or is a
+// shared server (namespace 0).
+func (s Server) GetNamespaceData() (Server, error) {
+	return s.getData(true)
+}
+
+func (s Server) getData(namespaceScoped bool) (Server, error) {
 	var server Server
 	builder := sq.
 		Select(
@@ -170,6 +180,10 @@ func (s Server) GetData() (Server, error) {
 
 	if s.ID > 0 {
 		builder = builder.Where(sq.Eq{"id": s.ID})
+	}
+
+	if namespaceScoped {
+		builder = builder.Where(sq.Eq{"namespace_id": []int64{0, s.NamespaceID}})
 	}
 
 	if s.Name != "" {

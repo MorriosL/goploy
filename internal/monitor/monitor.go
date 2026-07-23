@@ -106,7 +106,7 @@ func (m Monitor) CheckSite() error {
 		}
 		if resp, err := client.Get(url); err != nil {
 			return err
-		} else if 200 < resp.StatusCode || resp.StatusCode >= 400 {
+		} else if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 			return errors.New("Unexpected response status code: " + strconv.Itoa(resp.StatusCode))
 		}
 	}

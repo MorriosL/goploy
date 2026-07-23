@@ -44,7 +44,7 @@ func (rt rsyncTransmitter) args() []string {
 	rsyncOption = append(rsyncOption, "-e", projectServer.ToSSHOption())
 
 	if projectServer.Server.OS == model.ServerOSLinux {
-		rsyncOption = append(rsyncOption, "--rsync-path=mkdir -p "+destDir+" && rsync")
+		rsyncOption = append(rsyncOption, "--rsync-path=mkdir -p "+pkg.QuoteShellPath("linux", destDir)+" && rsync")
 	}
 
 	destPath := remoteMachine + ":" + destDir

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -98,7 +99,7 @@ func (st sftpTransmitter) Exec() (string, error) {
 	}
 	includes = append(includes, project.Script.AfterDeploy.ScriptNames...)
 
-	srcPath := config.GetProjectPath(project.ID) + "/"
+	srcPath := filepath.Clean(config.GetProjectPath(project.ID))
 	destPath := project.Path
 	if len(project.SymlinkPath) != 0 {
 		destPath = path.Join(project.SymlinkPath, project.LastPublishToken)
@@ -111,12 +112,16 @@ func (st sftpTransmitter) Exec() (string, error) {
 			return err
 		}
 		for _, entry := range localEntries {
-			nextLocalDir := path.Join(localDir, entry.Name())
+			nextLocalDir := filepath.Join(localDir, entry.Name())
 			nextRemoteDir := path.Join(remoteDir, entry.Name())
 			if entry.Type()&os.ModeSymlink != 0 {
 				continue
 			}
-			target := nextLocalDir[len(srcPath):]
+			rel, err := filepath.Rel(srcPath, nextLocalDir)
+			if err != nil {
+				return err
+			}
+			target := filepath.ToSlash(rel)
 
 			isExclude := false
 			for _, exclude := range excludes {

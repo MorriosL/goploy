@@ -122,6 +122,9 @@ export class ProjectPingRepos extends Request {
   readonly url = '/project/pingRepos'
   readonly method = 'get'
 
+  // Connectivity validation (smart-HTTP precheck + git ls-remote) can exceed the default 5s timeout.
+  public timeout = 60000
+
   public param: {
     repoType: string
     url: string
@@ -139,6 +142,9 @@ export class ProjectPingRepos extends Request {
 export class ProjectRemoteBranchList extends Request {
   readonly url = '/project/getRemoteBranchList'
   readonly method = 'get'
+
+  // Connectivity validation (smart-HTTP precheck + git ls-remote) can exceed the default 5s timeout.
+  public timeout = 60000
 
   public param: {
     repoType: string

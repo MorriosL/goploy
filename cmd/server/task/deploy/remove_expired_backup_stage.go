@@ -4,7 +4,7 @@ import (
 	"bytes"
 	log "github.com/sirupsen/logrus"
 	"github.com/zhenorzz/goploy/internal/model"
-	"strconv"
+	"github.com/zhenorzz/goploy/internal/pkg/cmd"
 	"sync"
 )
 
@@ -41,7 +41,8 @@ func (gsync *Gsync) removeExpiredBackup() {
 			var sshOutbuf, sshErrbuf bytes.Buffer
 			session.Stdout = &sshOutbuf
 			session.Stderr = &sshErrbuf
-			if err = session.Run("cd " + gsync.Project.SymlinkPath + ";ls -t | awk 'NR>" + strconv.Itoa(int(gsync.Project.SymlinkBackupNumber)) + "' | xargs rm -rf"); err != nil {
+			cleanupCommand := cmd.New(projectServer.Server.OS).RemoveExpiredBackups(gsync.Project.SymlinkPath, int(gsync.Project.SymlinkBackupNumber))
+			if err = session.Run(cleanupCommand); err != nil {
 				log.Error(err.Error())
 			}
 		}(projectServer)

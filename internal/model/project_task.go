@@ -18,32 +18,33 @@ const (
 
 // ProjectTask -
 type ProjectTask struct {
-	ID         int64  `json:"id"`
-	ProjectID  int64  `json:"projectId"`
-	Branch     string `json:"branch"`
-	CommitID   string `json:"commit"`
-	Date       string `json:"date"`
-	State      uint8  `json:"state"`
-	IsRun      uint8  `json:"isRun"`
-	Creator    string `json:"creator"`
-	CreatorID  int64  `json:"creatorId"`
-	Editor     string `json:"editor"`
-	EditorID   int64  `json:"editorId"`
-	InsertTime string `json:"insertTime"`
-	UpdateTime string `json:"updateTime"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"projectId"`
+	NamespaceID int64  `json:"namespaceId"`
+	Branch      string `json:"branch"`
+	CommitID    string `json:"commit"`
+	Date        string `json:"date"`
+	State       uint8  `json:"state"`
+	IsRun       uint8  `json:"isRun"`
+	Creator     string `json:"creator"`
+	CreatorID   int64  `json:"creatorId"`
+	Editor      string `json:"editor"`
+	EditorID    int64  `json:"editorId"`
+	InsertTime  string `json:"insertTime"`
+	UpdateTime  string `json:"updateTime"`
 }
 
 // ProjectTasks -
 type ProjectTasks []ProjectTask
 
-// GetDataInNamespace -
-func (pt ProjectTask) GetDataInNamespace(namespaceID int64) (ProjectTask, error) {
+// GetNamespaceData -
+func (pt ProjectTask) GetNamespaceData() (ProjectTask, error) {
 	var projectTask ProjectTask
 	err := sq.
 		Select("pt.id, pt.project_id").
 		From(projectTaskTable+" pt").
 		Join("`project` p ON p.id = pt.project_id").
-		Where(sq.Eq{"pt.id": pt.ID, "p.namespace_id": namespaceID}).
+		Where(sq.Eq{"pt.id": pt.ID, "p.namespace_id": pt.NamespaceID}).
 		RunWith(DB).
 		QueryRow().
 		Scan(&projectTask.ID, &projectTask.ProjectID)

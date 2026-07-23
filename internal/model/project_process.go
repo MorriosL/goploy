@@ -11,15 +11,16 @@ import (
 const projectProcessTable = "`project_process`"
 
 type ProjectProcess struct {
-	ID         int64  `json:"id"`
-	ProjectID  int64  `json:"projectId"`
-	Name       string `json:"name"`
-	Start      string `json:"start"`
-	Stop       string `json:"stop"`
-	Status     string `json:"status"`
-	Restart    string `json:"restart"`
-	InsertTime string `json:"insertTime,omitempty"`
-	UpdateTime string `json:"updateTime,omitempty"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"projectId"`
+	NamespaceID int64  `json:"namespaceId"`
+	Name        string `json:"name"`
+	Start       string `json:"start"`
+	Stop        string `json:"stop"`
+	Status      string `json:"status"`
+	Restart     string `json:"restart"`
+	InsertTime  string `json:"insertTime,omitempty"`
+	UpdateTime  string `json:"updateTime,omitempty"`
 }
 
 type ProjectProcesses []ProjectProcess
@@ -47,17 +48,25 @@ func (pp ProjectProcess) GetData() (ProjectProcess, error) {
 	return projectProcess, nil
 }
 
-// GetDataInNamespace -
-func (pp ProjectProcess) GetDataInNamespace(namespaceID int64) (ProjectProcess, error) {
+// GetNamespaceData -
+func (pp ProjectProcess) GetNamespaceData() (ProjectProcess, error) {
 	var projectProcess ProjectProcess
 	err := sq.
-		Select("pp.id, pp.project_id").
+		Select("pp.id, pp.project_id, pp.name, pp.start, pp.stop, pp.status, pp.restart").
 		From(projectProcessTable+" pp").
 		Join("`project` p ON p.id = pp.project_id").
-		Where(sq.Eq{"pp.id": pp.ID, "p.namespace_id": namespaceID}).
+		Where(sq.Eq{"pp.id": pp.ID, "p.namespace_id": pp.NamespaceID}).
 		RunWith(DB).
 		QueryRow().
-		Scan(&projectProcess.ID, &projectProcess.ProjectID)
+		Scan(
+			&projectProcess.ID,
+			&projectProcess.ProjectID,
+			&projectProcess.Name,
+			&projectProcess.Start,
+			&projectProcess.Stop,
+			&projectProcess.Status,
+			&projectProcess.Restart,
+		)
 	if err != nil {
 		return projectProcess, err
 	}

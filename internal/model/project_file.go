@@ -10,11 +10,12 @@ const projectFileTable = "`project_file`"
 
 // ProjectFile -
 type ProjectFile struct {
-	ID         int64  `json:"id"`
-	ProjectID  int64  `json:"projectId"`
-	Filename   string `json:"filename"`
-	InsertTime string `json:"insertTime"`
-	UpdateTime string `json:"updateTime"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"projectId"`
+	NamespaceID int64  `json:"namespaceId"`
+	Filename    string `json:"filename"`
+	InsertTime  string `json:"insertTime"`
+	UpdateTime  string `json:"updateTime"`
 }
 
 // ProjectFiles -
@@ -86,14 +87,14 @@ func (pf ProjectFile) GetData() (ProjectFile, error) {
 	return projectFile, nil
 }
 
-// GetDataInNamespace -
-func (pf ProjectFile) GetDataInNamespace(namespaceID int64) (ProjectFile, error) {
+// GetNamespaceData -
+func (pf ProjectFile) GetNamespaceData() (ProjectFile, error) {
 	var projectFile ProjectFile
 	err := sq.
 		Select("pf.id, pf.project_id, pf.filename, pf.insert_time, pf.update_time").
 		From(projectFileTable+" pf").
 		Join("`project` p ON p.id = pf.project_id").
-		Where(sq.Eq{"pf.id": pf.ID, "p.namespace_id": namespaceID}).
+		Where(sq.Eq{"pf.id": pf.ID, "p.namespace_id": pf.NamespaceID}).
 		RunWith(DB).
 		QueryRow().
 		Scan(

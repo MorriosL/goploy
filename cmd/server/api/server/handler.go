@@ -16,6 +16,7 @@ import (
 	"github.com/zhenorzz/goploy/config"
 	"github.com/zhenorzz/goploy/internal/model"
 	"github.com/zhenorzz/goploy/internal/pkg"
+	"github.com/zhenorzz/goploy/internal/pkg/cmd"
 	"github.com/zhenorzz/goploy/internal/server"
 	"github.com/zhenorzz/goploy/internal/server/response"
 	"github.com/zhenorzz/goploy/internal/validator"
@@ -23,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -129,9 +131,34 @@ func (Server) GetBindProjectList(gp *server.Goploy) server.Response {
 }
 
 func (Server) GetPublicKey(gp *server.Goploy) server.Response {
-	publicKeyPath := gp.URLQuery.Get("path")
-
-	contentByte, err := os.ReadFile(publicKeyPath + ".pub")
+	requestedPath := gp.URLQuery.Get("path")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	sshDir, err := filepath.Abs(filepath.Join(homeDir, ".ssh"))
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	publicKeyPath := requestedPath + ".pub"
+	if !filepath.IsAbs(publicKeyPath) {
+		publicKeyPath = filepath.Join(sshDir, publicKeyPath)
+	}
+	publicKeyPath, err = filepath.Abs(publicKeyPath)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if !pkg.IsPathWithinBase(sshDir, publicKeyPath) {
+		return response.JSON{Code: response.Error, Message: "public key path must be inside .ssh"}
+	}
+	resolvedPath, err := filepath.EvalSymlinks(publicKeyPath)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if !pkg.IsPathWithinBase(sshDir, resolvedPath) {
+		return response.JSON{Code: response.Error, Message: "public key path must be inside .ssh"}
+	}
+	contentByte, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -303,7 +330,7 @@ func (Server) Import(gp *server.Goploy) server.Response {
 					errOccur = true
 					log.Error(fmt.Sprintf("Error on No.%d line %s, field validation on %s failed", i, record, errMsg))
 				} else {
-					srv.OSInfo = srv.ToSSHConfig().GetOSInfo()
+					srv.OSInfo = srv.ToSSHConfig().GetOSInfo(srv.OS)
 					if _, err := srv.AddRow(); err != nil {
 						errOccur = true
 						log.Error(fmt.Sprintf("Error on No.%d line %s, %s", i, record, err.Error()))
@@ -353,6 +380,9 @@ func (s Server) Add(gp *server.Goploy) server.Response {
 	if err := gp.Decode(&reqData); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
+	if reqData.NamespaceID != 0 && reqData.NamespaceID != gp.Namespace.ID {
+		return response.JSON{Code: response.Error, Message: "invalid namespace"}
+	}
 
 	srv := model.Server{
 		NamespaceID:  reqData.NamespaceID,
@@ -370,7 +400,7 @@ func (s Server) Add(gp *server.Goploy) server.Response {
 		JumpPassword: reqData.JumpPassword,
 		Description:  reqData.Description,
 	}
-	srv.OSInfo = srv.ToSSHConfig().GetOSInfo()
+	srv.OSInfo = srv.ToSSHConfig().GetOSInfo(srv.OS)
 
 	id, err := srv.AddRow()
 	if err != nil {
@@ -414,6 +444,12 @@ func (s Server) Edit(gp *server.Goploy) server.Response {
 	if err := gp.Decode(&reqData); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
+	if reqData.NamespaceID != 0 && reqData.NamespaceID != gp.Namespace.ID {
+		return response.JSON{Code: response.Error, Message: "invalid namespace"}
+	}
+	if _, err := (model.Server{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
 	srv := model.Server{
 		ID:           reqData.ID,
 		NamespaceID:  reqData.NamespaceID,
@@ -431,7 +467,7 @@ func (s Server) Edit(gp *server.Goploy) server.Response {
 		JumpPassword: reqData.JumpPassword,
 		Description:  reqData.Description,
 	}
-	srv.OSInfo = srv.ToSSHConfig().GetOSInfo()
+	srv.OSInfo = srv.ToSSHConfig().GetOSInfo(srv.OS)
 
 	if err := srv.EditRow(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
@@ -454,6 +490,9 @@ func (Server) Toggle(gp *server.Goploy) server.Response {
 	}
 	var reqData ReqData
 	if err := gp.Decode(&reqData); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Server{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -480,10 +519,17 @@ func (Server) UnbindProject(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := (model.ProjectServer{}).DeleteInID(reqData.IDs); err != nil {
+	if err := (model.ProjectServer{NamespaceID: gp.Namespace.ID}).DeleteInIDInNamespace(reqData.IDs); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 	return response.JSON{}
+}
+
+// agentConfig builds the goploy-agent TOML, matching the Linux echo-based
+// output byte-for-byte (single-quoted env/uidType/path; unquoted reportURL/key/uid/port).
+func agentConfig(reportURL, key string, uid int64, webPort string) string {
+	return fmt.Sprintf("env = 'production'\n[goploy]\nreportURL = %s\nkey = %s\nuidType = 'id'\nuid = %d\n[log]\npath = 'stdout'\n[web]\nport = %s\n",
+		reportURL, key, uid, webPort)
 }
 
 func (Server) InstallAgent(gp *server.Goploy) server.Response {
@@ -500,6 +546,7 @@ func (Server) InstallAgent(gp *server.Goploy) server.Response {
 	}
 
 	downloadURL := "https://github.com/goploy-devops/goploy-agent/releases/latest/download/goploy-agent"
+	windowsDownloadURL := downloadURL + ".exe"
 	downloadCommand := fmt.Sprintf("wget %s --connect-timeout=7 --dns-timeout=7 -nv -O goploy-agent >> /dev/null 2>&1", downloadURL)
 	if reqData.Tool == "curl" {
 		downloadCommand = fmt.Sprintf("curl %s -o goploy-agent", downloadURL)
@@ -507,7 +554,7 @@ func (Server) InstallAgent(gp *server.Goploy) server.Response {
 
 	for _, id := range reqData.IDs {
 		go func(id int64) {
-			srv, err := (model.Server{ID: id}).GetData()
+			srv, err := (model.Server{ID: id, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 			if err != nil {
 				log.Error(fmt.Sprintf("Error on %d server, %s", id, err.Error()))
 				return
@@ -528,30 +575,59 @@ func (Server) InstallAgent(gp *server.Goploy) server.Response {
 			var sshOutbuf, sshErrbuf bytes.Buffer
 			session.Stdout = &sshOutbuf
 			session.Stderr = &sshErrbuf
-			commands := []string{
-				fmt.Sprintf("mkdir -p %s", reqData.InstallPath),
-				fmt.Sprintf("cd %s", reqData.InstallPath),
-				fmt.Sprintf("[./goploy-agent -s stop || true"),
-				downloadCommand,
-				"touch ./goploy-agent.toml",
-				"echo env = \\'production\\' > ./goploy-agent.toml",
-				"echo [goploy] >> ./goploy-agent.toml",
-				fmt.Sprintf("echo reportURL = \\'%s\\' >> ./goploy-agent.toml", reqData.ReportURL),
-				fmt.Sprintf("echo key = \\'%s\\' >> ./goploy-agent.toml", config.Toml.JWT.Key),
-				"echo uidType = \\'id\\' >> ./goploy-agent.toml",
-				fmt.Sprintf("echo uid = '%d' >> ./goploy-agent.toml", id),
-				"echo [log] >> ./goploy-agent.toml",
-				"echo path = \\'stdout\\' >> ./goploy-agent.toml",
-				"echo [web] >> ./goploy-agent.toml",
-				fmt.Sprintf("echo port = '%s' >> ./goploy-agent.toml", reqData.WebPort),
-				"chmod a+x ./goploy-agent",
-				"nohup ./goploy-agent &",
+			if srv.OS == model.ServerOSWindows {
+				// One base64-encoded PowerShell script: -EncodedCommand is UTF-16LE
+				// base64 so cmd.exe never parses the body, the config is base64-encoded
+				// in so user values can't inject PowerShell, and WriteAllText emits
+				// UTF-8 without BOM (Set-Content defaults to ANSI on PS 5.1).
+				configContent := agentConfig(reqData.ReportURL, config.Toml.JWT.Key, id, reqData.WebPort)
+				psInstallPath := pkg.QuotePowerShellString(reqData.InstallPath)
+				psScript := fmt.Sprintf(`$ErrorActionPreference='Stop'
+New-Item -ItemType Directory -Force -Path %s | Out-Null
+Set-Location %s
+try { & .\goploy-agent.exe -s stop } catch { }
+Invoke-WebRequest -Uri %s -OutFile goploy-agent.exe -UseBasicParsing
+$config = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(%s))
+[System.IO.File]::WriteAllText('goploy-agent.toml', $config)
+Start-Process -FilePath .\goploy-agent.exe -WindowStyle Hidden`,
+					psInstallPath,
+					psInstallPath,
+					pkg.QuotePowerShellString(windowsDownloadURL),
+					pkg.QuotePowerShellString(pkg.EncodeBase64(configContent)))
+				if err := session.Run("powershell -NoProfile -EncodedCommand " + pkg.EncodePowerShell(psScript)); err != nil {
+					log.Error(fmt.Sprintf("Error on %d server, %s, detail: %s", id, err.Error(), sshErrbuf.String()))
+					return
+				}
+				log.Info(sshErrbuf.String())
+			} else {
+				installPath := pkg.QuoteShellPath(srv.OS, reqData.InstallPath)
+				reportURL := pkg.QuoteShellPath(srv.OS, reqData.ReportURL)
+				webPort := pkg.QuoteShellPath(srv.OS, reqData.WebPort)
+				commands := []string{
+					fmt.Sprintf("mkdir -p %s", installPath),
+					fmt.Sprintf("cd %s", installPath),
+					"./goploy-agent -s stop || true",
+					downloadCommand,
+					"touch ./goploy-agent.toml",
+					"echo env = \\'production\\' > ./goploy-agent.toml",
+					"echo [goploy] >> ./goploy-agent.toml",
+					fmt.Sprintf("echo reportURL = %s >> ./goploy-agent.toml", reportURL),
+					fmt.Sprintf("echo key = %s >> ./goploy-agent.toml", pkg.QuoteShellPath(srv.OS, config.Toml.JWT.Key)),
+					"echo uidType = \\'id\\' >> ./goploy-agent.toml",
+					fmt.Sprintf("echo uid = '%d' >> ./goploy-agent.toml", id),
+					"echo [log] >> ./goploy-agent.toml",
+					"echo path = \\'stdout\\' >> ./goploy-agent.toml",
+					"echo [web] >> ./goploy-agent.toml",
+					fmt.Sprintf("echo port = %s >> ./goploy-agent.toml", webPort),
+					"chmod a+x ./goploy-agent",
+					"nohup ./goploy-agent &",
+				}
+				if err := session.Run(strings.Join(commands, "&&")); err != nil {
+					log.Error(fmt.Sprintf("Error on %d server, %s, detail: %s", id, err.Error(), sshErrbuf.String()))
+					return
+				}
+				log.Info(sshErrbuf.String())
 			}
-			if err := session.Run(strings.Join(commands, "&&")); err != nil {
-				log.Error(fmt.Sprintf("Error on %d server, %s, detail: %s", id, err.Error(), sshErrbuf.String()))
-				return
-			}
-			log.Info(sshErrbuf.String())
 		}(id)
 	}
 
@@ -563,7 +639,7 @@ func (Server) PreviewFile(gp *server.Goploy) server.Response {
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: "invalid server id"}
 	}
-	srv, err := (model.Server{ID: id}).GetData()
+	srv, err := (model.Server{ID: id, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -580,7 +656,7 @@ func (Server) DownloadFile(gp *server.Goploy) server.Response {
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: "invalid server id"}
 	}
-	srv, err := (model.Server{ID: id}).GetData()
+	srv, err := (model.Server{ID: id, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -608,7 +684,7 @@ func (Server) UploadFile(gp *server.Goploy) server.Response {
 	}
 	defer file.Close()
 
-	srv, err := (model.Server{ID: reqData.ID}).GetData()
+	srv, err := (model.Server{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -625,7 +701,11 @@ func (Server) UploadFile(gp *server.Goploy) server.Response {
 	}
 	defer sftpClient.Close()
 
-	remoteFile, err := sftpClient.Create(reqData.FilePath + "/" + fileHandler.Filename)
+	filename := strings.ReplaceAll(fileHandler.Filename, `\`, "/")
+	if filename == "" || filename == "." || filename == ".." || strings.Contains(filename, "/") || strings.ContainsRune(filename, 0) {
+		return response.JSON{Code: response.IllegalParam, Message: "invalid uploaded filename"}
+	}
+	remoteFile, err := sftpClient.Create(path.Join(reqData.FilePath, filename))
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -650,7 +730,7 @@ func (Server) EditFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -692,7 +772,7 @@ func (Server) CopyFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -711,11 +791,7 @@ func (Server) CopyFile(gp *server.Goploy) server.Response {
 	var sshOutbuf, sshErrbuf bytes.Buffer
 	session.Stdout = &sshOutbuf
 	session.Stderr = &sshErrbuf
-	optionR := ""
-	if reqData.IsDir {
-		optionR = "-r"
-	}
-	if err = session.Run(fmt.Sprintf("cp %s %s %s", optionR, path.Join(reqData.Dir, reqData.SrcName), path.Join(reqData.Dir, reqData.DstName))); err != nil {
+	if err = session.Run(cmd.New(srv.OS).Copy(path.Join(reqData.Dir, reqData.SrcName), path.Join(reqData.Dir, reqData.DstName), reqData.IsDir)); err != nil {
 		return response.JSON{Code: response.Error, Message: "err: " + err.Error() + ", detail: " + sshErrbuf.String()}
 	}
 	return response.JSON{}
@@ -733,7 +809,7 @@ func (Server) RenameFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -765,7 +841,7 @@ func (Server) DeleteFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -811,7 +887,7 @@ func (Server) TransferFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	sourceServer, err := (model.Server{ID: reqData.SourceServerID}).GetData()
+	sourceServer, err := (model.Server{ID: reqData.SourceServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -829,7 +905,7 @@ func (Server) TransferFile(gp *server.Goploy) server.Response {
 	defer sftpClient.Close()
 
 	for _, destServerID := range reqData.DestServerIDs {
-		destServer, err := (model.Server{ID: destServerID}).GetData()
+		destServer, err := (model.Server{ID: destServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 		if err != nil {
 			return response.JSON{Code: response.Error, Message: err.Error()}
 		}
@@ -1156,6 +1232,9 @@ func (Server) EditProcess(gp *server.Goploy) server.Response {
 	if err := gp.Decode(&reqData); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
+	if _, err := (model.ServerProcess{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
 	err := model.ServerProcess{
 		ID:    reqData.ID,
 		Name:  reqData.Name,
@@ -1174,6 +1253,9 @@ func (Server) DeleteProcess(gp *server.Goploy) server.Response {
 	}
 	var reqData ReqData
 	if err := gp.Decode(&reqData); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.ServerProcess{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1209,12 +1291,12 @@ func (Server) ExecProcess(gp *server.Goploy) server.Response {
 		return response.JSON{Data: respData}
 	}
 
-	serverProcess, err := model.ServerProcess{ID: reqData.ID}.GetData()
+	serverProcess, err := model.ServerProcess{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		respData.Stderr = err.Error()
 		return response.JSON{Data: respData}
 	}
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		respData.Stderr = err.Error()
 		return response.JSON{Data: respData}
@@ -1288,7 +1370,7 @@ func (Server) ExecScript(gp *server.Goploy) server.Response {
 				ServerID: serverId,
 			}
 
-			srv, err := (model.Server{ID: serverId}).GetData()
+			srv, err := (model.Server{ID: serverId, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 			if err != nil {
 				serverResp.ExecRes = false
 				serverResp.Stderr = err.Error()
@@ -1341,7 +1423,7 @@ func (Server) GetNginxPath(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.IllegalParam, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -1390,7 +1472,7 @@ func (Server) GetNginxConfigList(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.IllegalParam, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -1407,7 +1489,7 @@ func (Server) GetNginxConfigList(gp *server.Goploy) server.Response {
 	}
 	defer session.Close()
 
-	output, err := session.CombinedOutput(reqData.Dir + " -t")
+	output, err := session.CombinedOutput(pkg.QuoteShellPath(srv.OS, reqData.Dir) + " -t")
 
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: fmt.Sprintf("output: %s", output)}
@@ -1507,7 +1589,7 @@ func (Server) ManageNginx(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -1515,9 +1597,9 @@ func (Server) ManageNginx(gp *server.Goploy) server.Response {
 	script := ""
 	switch reqData.Command {
 	case "reload":
-		script = reqData.Path + " -s reload"
+		script = pkg.QuoteShellPath(srv.OS, reqData.Path) + " -s reload"
 	case "check":
-		script = reqData.Path + " -t"
+		script = pkg.QuoteShellPath(srv.OS, reqData.Path) + " -t"
 	default:
 		return response.JSON{Code: response.Error, Message: "Command error"}
 	}
@@ -1535,7 +1617,7 @@ func (Server) ManageNginx(gp *server.Goploy) server.Response {
 		}
 		defer checkSession.Close()
 
-		output, err := checkSession.CombinedOutput(reqData.Path + " -t")
+		output, err := checkSession.CombinedOutput(pkg.QuoteShellPath(srv.OS, reqData.Path) + " -t")
 		if err != nil {
 			return response.JSON{Code: response.Error, Message: err.Error()}
 		}
@@ -1578,7 +1660,7 @@ func (Server) GetNginxConfContent(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.IllegalParam, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -1625,7 +1707,7 @@ func (Server) EditNginxConfig(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -1668,7 +1750,7 @@ func (Server) CopyNginxConfig(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -1689,7 +1771,7 @@ func (Server) CopyNginxConfig(gp *server.Goploy) server.Response {
 	session.Stdout = &sshOutbuf
 	session.Stderr = &sshErrbuf
 
-	if err = session.Run(fmt.Sprintf("cp %s %s", path.Join(reqData.Dir, reqData.SrcName), path.Join(reqData.Dir, reqData.DstName))); err != nil {
+	if err = session.Run(cmd.New(srv.OS).Copy(path.Join(reqData.Dir, reqData.SrcName), path.Join(reqData.Dir, reqData.DstName), false)); err != nil {
 		return response.JSON{Code: response.Error, Message: "err: " + err.Error() + ", detail: " + sshErrbuf.String()}
 	}
 	return response.JSON{}
@@ -1707,7 +1789,7 @@ func (Server) RenameNginxConfig(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -1741,7 +1823,7 @@ func (Server) DeleteNginxConfig(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}

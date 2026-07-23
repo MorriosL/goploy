@@ -5,6 +5,7 @@
 package model
 
 import (
+	"database/sql"
 	"fmt"
 	sq "github.com/Masterminds/squirrel"
 )
@@ -128,28 +129,31 @@ func (pt PublishTrace) GetTotal() (int64, error) {
 	return total, nil
 }
 
-func (pt PublishTrace) GetListByToken() (PublishTraces, error) {
+func (pt PublishTrace) GetListByTokenInNamespace() (PublishTraces, error) {
 	rows, err := sq.
 		Select(
-			"id",
-			"token",
-			"project_id",
-			"project_name",
-			"if(state = 0,detail, '') as detail",
-			"state",
-			"publisher_id",
-			"publisher_name",
-			"type",
-			"ext",
-			"insert_time",
-			"update_time").
-		From(publishTraceTable).
-		Where(sq.Eq{"token": pt.Token}).
+			"pt.id",
+			"pt.token",
+			"pt.project_id",
+			"pt.project_name",
+			"if(pt.state = 0, pt.detail, '') as detail",
+			"pt.state",
+			"pt.publisher_id",
+			"pt.publisher_name",
+			"pt.type",
+			"pt.ext",
+			"pt.insert_time",
+			"pt.update_time").
+		From(publishTraceTable + " pt").
+		Join("`project` p ON p.id = pt.project_id").
+		Where(sq.Eq{"pt.token": pt.Token, "p.namespace_id": pt.NamespaceID}).
 		RunWith(DB).
 		Query()
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
+
 	publishTraces := PublishTraces{}
 	for rows.Next() {
 		var publishTrace PublishTrace
@@ -170,6 +174,9 @@ func (pt PublishTrace) GetListByToken() (PublishTraces, error) {
 			return nil, err
 		}
 		publishTraces = append(publishTraces, publishTrace)
+	}
+	if len(publishTraces) == 0 {
+		return nil, sql.ErrNoRows
 	}
 	return publishTraces, nil
 }
@@ -290,6 +297,22 @@ func (pt PublishTrace) GetDetail() (string, error) {
 		Select("detail").
 		From(publishTraceTable).
 		Where(sq.Eq{"id": pt.ID}).
+		RunWith(DB).
+		QueryRow().
+		Scan(&detail)
+	if err != nil {
+		return detail, err
+	}
+	return detail, nil
+}
+
+func (pt PublishTrace) GetDetailInNamespace() (string, error) {
+	var detail string
+	err := sq.
+		Select("pt.detail").
+		From(publishTraceTable + " pt").
+		Join("`project` p ON p.id = pt.project_id").
+		Where(sq.Eq{"pt.id": pt.ID, "p.namespace_id": pt.NamespaceID}).
 		RunWith(DB).
 		QueryRow().
 		Scan(&detail)

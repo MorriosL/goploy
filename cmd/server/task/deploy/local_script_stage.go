@@ -13,7 +13,6 @@ import (
 	"gopkg.in/yaml.v3"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -107,7 +106,7 @@ func (gsync *Gsync) runLocalScript() error {
 			gsync.PublishTrace.InsertTime = time.Now().Format("20060102150405")
 			scriptText = strings.Join(step.Commands, "\n")
 			tmpScriptName := scriptName + fmt.Sprintf("-y%d", stepIndex)
-			scriptFullName := path.Join(srcPath, tmpScriptName)
+			scriptFullName := filepath.Join(srcPath, tmpScriptName)
 			step.ScriptName = tmpScriptName
 
 			_ = os.WriteFile(scriptFullName, []byte(scriptText), 0755)
@@ -139,7 +138,7 @@ func (gsync *Gsync) runLocalScript() error {
 		}
 	} else {
 		scriptName += fmt.Sprintf(".%s", pkg.GetScriptExt(mode))
-		scriptFullName := path.Join(srcPath, scriptName)
+		scriptFullName := filepath.Join(srcPath, scriptName)
 		_ = os.WriteFile(scriptFullName, []byte(scriptText), 0755)
 
 		var commandOptions []string

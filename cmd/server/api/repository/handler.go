@@ -16,7 +16,8 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
+	"strings"
 )
 
 type Repository api.API
@@ -50,7 +51,7 @@ func (Repository) GetBranchList(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	project, err := model.Project{ID: reqData.ID}.GetData()
+	project, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -91,7 +92,7 @@ func (Repository) GetCommitList(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	project, err := model.Project{ID: reqData.ID}.GetData()
+	project, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -131,7 +132,7 @@ func (Repository) GetTagList(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	project, err := model.Project{ID: reqData.ID}.GetData()
+	project, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -180,13 +181,15 @@ func (Repository) GetFileList(gp *server.Goploy) server.Response {
 		List []item `json:"list"`
 	}
 
-	if reqData.Dir != "" {
-		if err := pkg.ValidateRelativePath(reqData.Dir); err != nil {
-			return response.JSON{Code: response.Error, Message: err.Error()}
-		}
+	project, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-
-	dirEntries, err := os.ReadDir(path.Join(config.GetProjectPath(reqData.ID), reqData.Dir))
+	repositoryPath, err := resolveRepositoryPath(config.GetProjectPath(project.ID), reqData.Dir, true)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	dirEntries, err := os.ReadDir(repositoryPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return response.JSON{Data: RespData{List: []item{}}}
@@ -227,11 +230,15 @@ func (Repository) PreviewFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := pkg.ValidateRelativePath(reqData.File); err != nil {
+	project, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
+	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-
-	return response.File{Filename: path.Join(config.GetProjectPath(reqData.ID), reqData.File), Disposition: "inline"}
+	filePath, err := resolveRepositoryPath(config.GetProjectPath(project.ID), reqData.File, false)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	return response.File{Filename: filePath, Disposition: "inline"}
 }
 
 // DownloadFile download repository file
@@ -252,11 +259,15 @@ func (Repository) DownloadFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := pkg.ValidateRelativePath(reqData.File); err != nil {
+	project, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
+	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-
-	return response.File{Filename: path.Join(config.GetProjectPath(reqData.ID), reqData.File), Disposition: "attachment"}
+	filePath, err := resolveRepositoryPath(config.GetProjectPath(project.ID), reqData.File, false)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	return response.File{Filename: filePath, Disposition: "attachment"}
 }
 
 // DeleteFile delete repository file
@@ -276,11 +287,14 @@ func (Repository) DeleteFile(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := pkg.ValidateRelativePath(reqData.File); err != nil {
+	project, err := model.Project{ID: reqData.ID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
+	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-
-	file := path.Join(config.GetProjectPath(reqData.ID), reqData.File)
+	file, err := resolveRepositoryPath(config.GetProjectPath(project.ID), reqData.File, false)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
 	fi, err := os.Stat(file)
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
@@ -296,4 +310,25 @@ func (Repository) DeleteFile(gp *server.Goploy) server.Response {
 	}
 
 	return response.JSON{}
+}
+
+// errInvalidRepositoryPath is returned when a repository file path is empty,
+// root, or escapes the project's repository directory.
+var errInvalidRepositoryPath = errors.New("invalid repository file path")
+
+// resolveRepositoryPath resolves name below baseDir. An empty or root ("/")
+// name denotes the base directory itself and is only accepted when allowEmpty
+// is set.
+func resolveRepositoryPath(baseDir, name string, allowEmpty bool) (string, error) {
+	if strings.Trim(name, `/\`) == "" {
+		if !allowEmpty {
+			return "", errInvalidRepositoryPath
+		}
+		return filepath.Abs(baseDir)
+	}
+	target, _, err := pkg.ResolvePath(baseDir, name)
+	if errors.Is(err, pkg.ErrInvalidPath) {
+		return "", errInvalidRepositoryPath
+	}
+	return target, err
 }

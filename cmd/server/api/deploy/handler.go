@@ -33,6 +33,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -153,7 +154,7 @@ func (Deploy) GetPreview(gp *server.Goploy) server.Response {
 // @Router /deploy/getPublishTrace [get]
 func (Deploy) GetPublishTrace(gp *server.Goploy) server.Response {
 	lastPublishToken := gp.URLQuery.Get("lastPublishToken")
-	publishTraceList, err := model.PublishTrace{Token: lastPublishToken}.GetListByToken()
+	publishTraceList, err := model.PublishTrace{Token: lastPublishToken, NamespaceID: gp.Namespace.ID}.GetListByTokenInNamespace()
 	if errors.Is(err, sql.ErrNoRows) {
 		return response.JSON{Code: response.Error, Message: "No deploy record"}
 	} else if err != nil {
@@ -178,7 +179,7 @@ func (Deploy) GetPublishTrace(gp *server.Goploy) server.Response {
 // @Router /deploy/getPublishProgress [get]
 func (Deploy) GetPublishProgress(gp *server.Goploy) server.Response {
 	lastPublishToken := gp.URLQuery.Get("lastPublishToken")
-	publishTraceList, err := model.PublishTrace{Token: lastPublishToken}.GetListByToken()
+	publishTraceList, err := model.PublishTrace{Token: lastPublishToken, NamespaceID: gp.Namespace.ID}.GetListByTokenInNamespace()
 	if errors.Is(err, sql.ErrNoRows) {
 		return response.JSON{Code: response.Error, Message: "No deploy record"}
 	} else if err != nil {
@@ -241,7 +242,7 @@ func (Deploy) GetPublishTraceDetail(gp *server.Goploy) server.Response {
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	detail, err := model.PublishTrace{ID: id}.GetDetail()
+	detail, err := model.PublishTrace{ID: id, NamespaceID: gp.Namespace.ID}.GetDetailInNamespace()
 	if errors.Is(err, sql.ErrNoRows) {
 		return response.JSON{Code: response.Error, Message: "No deploy record"}
 	} else if err != nil {
@@ -273,6 +274,9 @@ func (Deploy) ResetState(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
+	if _, err := (model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
 	if err := (model.Project{ID: reqData.ProjectID}).ResetState(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -302,12 +306,12 @@ func (Deploy) FileCompare(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	project, err := model.Project{ID: reqData.ProjectID}.GetData()
+	project, err := model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srcPath := path.Join(config.GetProjectPath(reqData.ProjectID), reqData.FilePath)
+	srcPath := filepath.Join(config.GetProjectPath(project.ID), filepath.FromSlash(strings.ReplaceAll(reqData.FilePath, `\`, "/")))
 	file, err := os.Open(srcPath)
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
@@ -405,17 +409,17 @@ func (Deploy) FileDiff(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	project, err := model.Project{ID: reqData.ProjectID}.GetData()
+	project, err := model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srcText, err := os.ReadFile(path.Join(config.GetProjectPath(reqData.ProjectID), reqData.FilePath))
+	srcText, err := os.ReadFile(filepath.Join(config.GetProjectPath(project.ID), filepath.FromSlash(strings.ReplaceAll(reqData.FilePath, `\`, "/"))))
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	srv, err := model.Server{ID: reqData.ServerID}.GetData()
+	srv, err := model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -470,15 +474,15 @@ func (Deploy) ManageProcess(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	projectProcess, err := model.ProjectProcess{ID: reqData.ProjectProcessID}.GetData()
+	projectProcess, err := model.ProjectProcess{ID: reqData.ProjectProcessID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	project, err := (model.Project{ID: projectProcess.ProjectID}).GetData()
+	project, err := (model.Project{ID: projectProcess.ProjectID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	srv, err := (model.Server{ID: reqData.ServerID}).GetData()
+	srv, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -557,7 +561,7 @@ func (Deploy) Publish(gp *server.Goploy) server.Response {
 	if err := gp.Decode(&reqData); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
-	project, err := model.Project{ID: reqData.ProjectID}.GetData()
+	project, err := model.Project{ID: reqData.ProjectID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -602,7 +606,7 @@ func (Deploy) Rebuild(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 	var err error
-	publishTraceList, err := model.PublishTrace{Token: reqData.Token}.GetListByToken()
+	publishTraceList, err := model.PublishTrace{Token: reqData.Token, NamespaceID: gp.Namespace.ID}.GetListByTokenInNamespace()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -678,7 +682,7 @@ func (Deploy) Rebuild(gp *server.Goploy) server.Response {
 							// delete the script
 							step.Commands = append(step.Commands, fmt.Sprintf("rm -f %s", docker.GetDockerProjectScriptPath(project.ID, scriptName)))
 							scriptContent = strings.Join(step.Commands, "\n")
-							err = os.WriteFile(path.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
+							err = os.WriteFile(filepath.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
 							if err != nil {
 								log.Error("projectID:" + strconv.FormatInt(project.ID, 10) + " write file err: " + err.Error())
 								ch <- false
@@ -686,7 +690,7 @@ func (Deploy) Rebuild(gp *server.Goploy) server.Response {
 							}
 						}
 					} else {
-						err = os.WriteFile(path.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
+						err = os.WriteFile(filepath.Join(config.GetProjectPath(project.ID), scriptName), []byte(scriptContent), 0755)
 						if err != nil {
 							log.Error("projectID:" + strconv.FormatInt(project.ID, 10) + " write file err: " + err.Error())
 							ch <- false
@@ -719,7 +723,7 @@ func (Deploy) Rebuild(gp *server.Goploy) server.Response {
 				defer session.Close()
 
 				// check if the path is existed or not
-				if output, err := session.CombinedOutput("cd " + destDir); err != nil {
+				if output, err := session.CombinedOutput("cd " + pkg.QuoteShellPath(projectServer.Server.OS, destDir)); err != nil {
 					log.Error("projectID:" + strconv.FormatInt(project.ID, 10) + " check symlink path err: " + err.Error() + ", detail: " + string(output))
 					ch <- false
 					return
@@ -742,7 +746,7 @@ func (Deploy) Rebuild(gp *server.Goploy) server.Response {
 						step.ScriptName = fmt.Sprintf("goploy-after-deploy-p%d-s%d-y%d", project.ID, projectServer.ServerID, stepIndex)
 						dockerOutput, dockerErr := dockerConfig.Run(step)
 
-						scriptFullName := path.Join(config.GetProjectPath(project.ID), step.ScriptName)
+						scriptFullName := filepath.Join(config.GetProjectPath(project.ID), step.ScriptName)
 						_ = os.Remove(scriptFullName)
 
 						if dockerErr != nil {
@@ -860,12 +864,13 @@ func (Deploy) Review(gp *server.Goploy) server.Response {
 	}
 
 	projectReviewModel := model.ProjectReview{
-		ID:       reqData.ProjectReviewID,
-		State:    reqData.State,
-		Editor:   gp.UserInfo.Name,
-		EditorID: gp.UserInfo.ID,
+		ID:          reqData.ProjectReviewID,
+		NamespaceID: gp.Namespace.ID,
+		State:       reqData.State,
+		Editor:      gp.UserInfo.Name,
+		EditorID:    gp.UserInfo.ID,
 	}
-	pr, err := projectReviewModel.GetData()
+	pr, err := projectReviewModel.GetNamespaceData()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
@@ -875,7 +880,7 @@ func (Deploy) Review(gp *server.Goploy) server.Response {
 	}
 
 	if reqData.State == model.APPROVE {
-		project, err := model.Project{ID: pr.ProjectID}.GetData()
+		project, err := model.Project{ID: pr.ProjectID, NamespaceID: gp.Namespace.ID}.GetNamespaceData()
 		if err != nil {
 			return response.JSON{Code: response.Error, Message: err.Error()}
 		}
