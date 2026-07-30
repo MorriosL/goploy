@@ -41,6 +41,7 @@ func (s Script) IsValid() bool {
 }
 
 type Monitor struct {
+	NamespaceID   int64
 	Type          int
 	Target        model.MonitorTarget
 	FailScript    Script
@@ -48,6 +49,12 @@ type Monitor struct {
 }
 
 type Option func(*Monitor)
+
+func WithNamespace(namespaceID int64) Option {
+	return func(c *Monitor) {
+		c.NamespaceID = namespaceID
+	}
+}
 
 func WithSuccessScript(serverID int64, content string) Option {
 	return func(c *Monitor) {
@@ -153,7 +160,7 @@ func (m Monitor) CheckScript() error {
 		if err != nil {
 			return err
 		}
-		server, client, session, err := NewServerSession(serverID, m.Target.Timeout*time.Second)
+		server, client, session, err := NewServerSession(m.NamespaceID, serverID, m.Target.Timeout*time.Second)
 		if err != nil {
 			return err
 		}
@@ -177,7 +184,7 @@ func (m Monitor) RunFailScript(serverID int64) error {
 		}
 
 		if sId != -1 {
-			server, client, session, err := NewServerSession(sId, m.Target.Timeout*time.Second)
+			server, client, session, err := NewServerSession(m.NamespaceID, sId, m.Target.Timeout*time.Second)
 			if err != nil {
 				return err
 			}
@@ -205,7 +212,7 @@ func (m Monitor) RunSuccessScript(serverID int64) error {
 		}
 
 		if sId != -1 {
-			server, client, session, err := NewServerSession(sId, m.Target.Timeout*time.Second)
+			server, client, session, err := NewServerSession(m.NamespaceID, sId, m.Target.Timeout*time.Second)
 			if err != nil {
 				return err
 			}
@@ -225,8 +232,8 @@ func (m Monitor) RunSuccessScript(serverID int64) error {
 	return nil
 }
 
-func NewServerSession(serverID int64, timeout time.Duration) (model.Server, *ssh.Client, *ssh.Session, error) {
-	server, err := (model.Server{ID: serverID}).GetData()
+func NewServerSession(namespaceID, serverID int64, timeout time.Duration) (model.Server, *ssh.Client, *ssh.Session, error) {
+	server, err := (model.Server{ID: serverID, NamespaceID: namespaceID}).GetNamespaceData()
 	if err != nil {
 		return server, nil, nil, err
 	} else if server.State == model.Disable {

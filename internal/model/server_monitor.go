@@ -140,6 +140,25 @@ func (sm ServerMonitor) GetAllModBy(number int, time string) (ServerMonitors, er
 	return serverMonitors, nil
 }
 
+// GetData -
+func (sm ServerMonitor) GetData() (ServerMonitor, error) {
+	var serverMonitor ServerMonitor
+	err := sq.
+		Select(
+			"id",
+			"server_id",
+		).
+		From(serverMonitorTable).
+		Where(sq.Eq{"id": sm.ID}).
+		RunWith(DB).
+		QueryRow().
+		Scan(
+			&serverMonitor.ID,
+			&serverMonitor.ServerID,
+		)
+	return serverMonitor, err
+}
+
 // AddRow return LastInsertId
 func (sm ServerMonitor) AddRow() (int64, error) {
 	result, err := sq.

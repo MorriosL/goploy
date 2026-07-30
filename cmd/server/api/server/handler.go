@@ -1060,6 +1060,12 @@ func (Server) Report(gp *server.Goploy) server.Response {
 
 func (Server) GetAllMonitor(gp *server.Goploy) server.Response {
 	serverID, err := strconv.ParseInt(gp.URLQuery.Get("serverId"), 10, 64)
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Server{ID: serverID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
 	serverMonitorList, err := model.ServerMonitor{ServerID: serverID}.GetAll()
 	if err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
@@ -1089,6 +1095,10 @@ func (s Server) AddMonitor(gp *server.Goploy) server.Response {
 
 	var reqData ReqData
 	if err := gp.Decode(&reqData); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+
+	if _, err := (model.Server{ID: reqData.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
@@ -1139,7 +1149,15 @@ func (s Server) EditMonitor(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	err := model.ServerMonitor{
+	serverMonitor, err := (model.ServerMonitor{ID: reqData.ID}).GetData()
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Server{ID: serverMonitor.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+
+	err = model.ServerMonitor{
 		ID:           reqData.ID,
 		Item:         reqData.Item,
 		Formula:      reqData.Formula,
@@ -1171,7 +1189,15 @@ func (s Server) DeleteMonitor(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	err := model.ServerMonitor{
+	serverMonitor, err := (model.ServerMonitor{ID: reqData.ID}).GetData()
+	if err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+	if _, err := (model.Server{ID: serverMonitor.ServerID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+
+	err = model.ServerMonitor{
 		ID: reqData.ID,
 	}.DeleteRow()
 

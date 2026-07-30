@@ -91,6 +91,7 @@ func monitorTask() {
 		ms := monitor.NewMonitorFromTarget(
 			m.Type,
 			m.Target,
+			monitor.WithNamespace(m.NamespaceID),
 			monitor.WithSuccessScript(m.SuccessServerID, m.SuccessScript),
 			monitor.WithFailScript(m.FailServerID, m.FailScript),
 		)

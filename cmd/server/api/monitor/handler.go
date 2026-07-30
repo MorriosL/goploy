@@ -60,6 +60,7 @@ func (Monitor) Check(gp *server.Goploy) server.Response {
 	m := monitor.NewMonitorFromTarget(
 		reqData.Type,
 		reqData.Target,
+		monitor.WithNamespace(gp.Namespace.ID),
 		monitor.WithSuccessScript(reqData.SuccessServerID, reqData.SuccessScript),
 		monitor.WithFailScript(reqData.FailServerID, reqData.FailScript),
 	)
@@ -172,8 +173,13 @@ func (Monitor) Edit(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
+	if _, err := (model.Monitor{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+
 	err := model.Monitor{
 		ID:              reqData.ID,
+		NamespaceID:     gp.Namespace.ID,
 		Name:            reqData.Name,
 		Type:            reqData.Type,
 		Target:          reqData.Target,
@@ -205,7 +211,11 @@ func (Monitor) Toggle(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := (model.Monitor{ID: reqData.ID, State: reqData.State}).ToggleState(); err != nil {
+	if _, err := (model.Monitor{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+
+	if err := (model.Monitor{ID: reqData.ID, NamespaceID: gp.Namespace.ID, State: reqData.State}).ToggleState(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 	return response.JSON{}
@@ -220,7 +230,11 @@ func (Monitor) Remove(gp *server.Goploy) server.Response {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 
-	if err := (model.Monitor{ID: reqData.ID}).DeleteRow(); err != nil {
+	if _, err := (model.Monitor{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).GetNamespaceData(); err != nil {
+		return response.JSON{Code: response.Error, Message: err.Error()}
+	}
+
+	if err := (model.Monitor{ID: reqData.ID, NamespaceID: gp.Namespace.ID}).DeleteRow(); err != nil {
 		return response.JSON{Code: response.Error, Message: err.Error()}
 	}
 	return response.JSON{}

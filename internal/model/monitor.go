@@ -112,9 +112,22 @@ func (m Monitor) GetData() (Monitor, error) {
 	return monitor, nil
 }
 
+// GetNamespaceData returns a monitor that belongs to m.NamespaceID.
+func (m Monitor) GetNamespaceData() (Monitor, error) {
+	var monitor Monitor
+	err := sq.
+		Select("id").
+		From(monitorTable).
+		Where(sq.Eq{"id": m.ID, "namespace_id": m.NamespaceID}).
+		RunWith(DB).
+		QueryRow().
+		Scan(&monitor.ID)
+	return monitor, err
+}
+
 func (m Monitor) GetAllByState() (Monitors, error) {
 	rows, err := sq.
-		Select("id, name, type, target, second, times, silent_cycle, notify_type, notify_target, success_script, fail_script, success_server_id, fail_server_id, description, update_time").
+		Select("id, namespace_id, name, type, target, second, times, silent_cycle, notify_type, notify_target, success_script, fail_script, success_server_id, fail_server_id, description, update_time").
 		From(monitorTable).
 		Where(sq.Eq{
 			"state": m.State,
@@ -130,6 +143,7 @@ func (m Monitor) GetAllByState() (Monitors, error) {
 		var target []byte
 		if err := rows.Scan(
 			&monitor.ID,
+			&monitor.NamespaceID,
 			&monitor.Name,
 			&monitor.Type,
 			&target,
