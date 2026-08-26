@@ -59,7 +59,11 @@
       />
     </el-row>
     <el-row class="app-table">
-      <el-scrollbar style="width: 100%" @end-reached="load">
+      <el-scrollbar
+        ref="scrollbarRef"
+        style="width: 100%"
+        @end-reached="load"
+      >
         <el-row style="width: 100%" :gutter="10">
           <el-col
             v-for="(row, index) in tablePage.list"
@@ -423,8 +427,8 @@ import TheReviewListDialog from './TheReviewListDialog.vue'
 import TheProcessManagerDialog from './TheProcessManagerDialog.vue'
 import TheFileCompareDialog from './TheFileCompareDialog.vue'
 import TheFileSyncDialog from './TheFileSyncDialog.vue'
-import { computed, watch, h, ref } from 'vue'
-import type { ScrollbarDirection } from 'element-plus'
+import { computed, nextTick, onMounted, watch, h, ref } from 'vue'
+import type { ScrollbarDirection, ScrollbarInstance } from 'element-plus'
 import { CommitData } from '@/api/repository'
 import { useStore } from 'vuex'
 import { useI18n } from 'vue-i18n'
@@ -464,6 +468,7 @@ const envTitleStyle = [
   },
 ]
 const selectedItem = ref({} as ProjectData)
+const scrollbarRef = ref<ScrollbarInstance>()
 const noMore = computed(
   () => tablePage.value.total === tablePage.value.list.length
 )
@@ -499,7 +504,7 @@ const tablePage = computed(() => {
       (item) => item.environment === Number(searchProject.value.environment)
     )
   }
-  if (searchProject.value.pin) {
+  if (searchProject.value.pin !== undefined) {
     _tableData = _tableData.filter(
       (item) => item.pin === searchProject.value.pin
     )
@@ -516,6 +521,19 @@ const tablePage = computed(() => {
     total: _tableData.length,
   }
 })
+watch(
+  searchProject,
+  () => {
+    pagination.value.page = 1
+  },
+  { deep: true }
+)
+watch(
+  () => [tablePage.value.list.length, tablePage.value.total],
+  fillScrollbar,
+  { flush: 'post' }
+)
+onMounted(fillScrollbar)
 watch(
   () => store.state.websocket.message,
   function (response) {
@@ -660,6 +678,27 @@ function load(direction: ScrollbarDirection) {
     return
   }
   pagination.value.page++
+}
+
+let fillScheduled = false
+function fillScrollbar() {
+  if (fillScheduled) {
+    return
+  }
+  fillScheduled = true
+  nextTick(() => {
+    fillScheduled = false
+    const wrap = scrollbarRef.value?.wrapRef
+    if (
+      !wrap ||
+      wrap.clientHeight === 0 ||
+      noMore.value ||
+      wrap.scrollHeight > wrap.clientHeight
+    ) {
+      return
+    }
+    pagination.value.page++
+  })
 }
 
 function handleDetail(data: ProjectData) {
